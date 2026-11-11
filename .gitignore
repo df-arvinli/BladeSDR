@@ -1,0 +1,26 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local Claude Code settings (per-person)
+.claude/settings.local.json
+
+# SDR++ is a separate upstream checkout plus build output (see README: 重建 SDR++)
+sdrpp-src/
+
+# Measurements and runtime state: large, personal, and reproducible
+sweep/*.csv
+sweep/*.png
+sweep/*.txt
+!sweep/requirements.txt
+sweep/.trash/
+webmon/recordings/
+webmon/events.csv
+webmon/server.log
+webmon/config.json

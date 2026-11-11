@@ -1,0 +1,1097 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BladeRF 頻譜監控</title>
+<style>
+:root{--bg:#0f1318;--panel:#171d25;--line:#2a3340;--text:#d8dee9;--mute:#8793a5;--acc:#4cc2ff;--ok:#5fd68a;--warn:#ffb454;--bad:#ff6b6b}
+*{box-sizing:border-box}
+body{font-variant-numeric:tabular-nums;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,"PingFang TC",sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0}
+.pill{padding:2px 10px;border-radius:99px;font-size:12px;border:1px solid var(--line);color:var(--mute)}
+.pill.hop{color:#c792ff;border-color:#c792ff}.pill.live{color:var(--ok);border-color:var(--ok)}.pill.sweep{color:var(--warn);border-color:var(--warn)}.pill.err{color:var(--bad);border-color:var(--bad)}
+nav{display:flex;gap:4px;margin-left:auto}
+nav button{background:none;border:1px solid var(--line);color:var(--mute);padding:5px 14px;border-radius:6px;cursor:pointer}
+nav button.on{color:var(--text);border-color:var(--acc);background:#1b2633}
+main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:12px;padding:12px 16px;align-items:start}
+main>*{min-width:0}
+@media(max-width:1000px){main{grid-template-columns:minmax(0,1fr)}}
+aside,.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+details{border-top:1px solid var(--line);padding:6px 0}details:first-of-type{border-top:0}
+summary{cursor:pointer;font-size:12px;color:var(--mute);font-weight:600;letter-spacing:.04em;padding:4px 0;user-select:none}
+details[open]>summary{color:var(--text)}
+h3{margin:12px 0 6px;font-size:12px;color:var(--mute);font-weight:600;letter-spacing:.04em}h3:first-child{margin-top:0}
+label{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:5px 0;color:var(--text)}
+label.stack{flex-direction:column;align-items:stretch;gap:3px}
+label.stack select{width:100%;max-width:100%}
+input,select{background:#0f1318;border:1px solid var(--line);color:var(--text);border-radius:5px;padding:4px 6px;font:inherit;min-width:0}
+select{max-width:170px;text-overflow:ellipsis}
+input[type=number]{width:105px}input[type=range]{width:130px;padding:0}input[type=checkbox]{width:auto}
+button.act{background:#1b2633;border:1px solid var(--acc);color:var(--acc);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
+button.act:hover{background:#223347}button.act.stop{border-color:var(--bad);color:var(--bad);background:#2a1a1d}
+button.act:disabled{opacity:.45;cursor:not-allowed}
+button.sm{background:none;border:1px solid var(--line);color:var(--mute);padding:2px 8px;border-radius:5px;cursor:pointer;font-size:12px}
+button.sm:hover{color:var(--text)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;align-items:center}
+canvas{width:100%;display:block;border-radius:6px;background:#000}
+#spec{height:400px}#wf{height:900px;margin-top:6px}#trend{height:110px;margin-top:6px}#occ{height:130px;margin-top:6px}#ovw{height:84px;cursor:crosshair}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:10px}
+.kv div{background:#0f1318;border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+.kv b{display:block;font-size:11px;color:var(--mute);font-weight:500}.kv span{font-size:16px;overflow-wrap:anywhere}
+.note{color:var(--mute);font-size:12px;margin:6px 0}
+.sec{margin:12px 0 4px;font-size:12px;color:var(--mute)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px}
+.box{background:#0f1318;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.box h4{margin:0 0 6px;font-size:12px;color:var(--mute);font-weight:600}
+.box table td{padding:3px 6px;font-size:13px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);font-size:13px}
+th{color:var(--mute);font-weight:500}
+.hidden{display:none!important}
+.bar{height:8px;background:#0f1318;border-radius:4px;overflow:hidden;border:1px solid var(--line)}.bar>div{height:100%;background:var(--acc);width:0}
+#tip{position:fixed;pointer-events:none;background:#000d;border:1px solid var(--line);padding:3px 7px;border-radius:5px;font-size:12px;display:none;z-index:9;max-width:340px}
+.err-box{background:#2a1a1d;border:1px solid var(--bad);color:var(--bad);padding:8px 10px;border-radius:6px;margin-bottom:10px;overflow-wrap:anywhere}
+.good{color:var(--ok)}.dim{color:var(--mute)}
+textarea{background:#0f1318;border:1px solid var(--line);color:var(--text);border-radius:5px;padding:6px;font:12px/1.5 ui-monospace,Menlo,monospace;width:100%;resize:vertical}
+.zgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;margin-top:10px}
+.zone{background:#0f1318;border:1px solid var(--line);border-radius:8px;padding:8px;min-width:0}
+.zone.alert{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad)}
+.zone.stale{opacity:.55}
+.zh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.zh b{font-size:13px}.zf{color:var(--mute);font-size:12px}.za{margin-left:auto;font-size:11px;color:var(--mute)}
+.hc{height:360px;margin-top:6px;cursor:crosshair}#hc_wf{height:1440px;margin-top:6px}.tools{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:10px 0 4px}.tools label{margin:0}.tools input[type=number]{width:68px}#h_top td{height:24px}
+.zs{height:112px;margin-top:6px}.zw{height:56px;margin-top:4px}.zi{font-size:11px;color:var(--mute);margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>BladeRF 頻譜監控</h1>
+  <span id="mode" class="pill">待機</span>
+  <span id="dev" class="pill">裝置：—</span>
+  <nav>
+    <button data-tab="live" class="on">即時監控</button>
+    <button data-tab="hop">分區動態監控</button>
+    <button data-tab="scan">掃描結果</button>
+    <button data-tab="replay">回放</button>
+    <button data-tab="events">干擾事件</button>
+  </nav>
+</header>
+<div id="tip"></div>
+
+<!-- ================= LIVE ================= -->
+<main id="tab-live">
+<aside>
+  <div id="errbox" class="err-box hidden"></div>
+  <div class="row"><button id="btnLive" class="act">開始接收</button><button class="sm" id="btnRefresh">重新偵測裝置</button> <button class="sm" id="recBtn_live" title="錄下每秒的頻譜（該秒最大值）">● 錄製</button> <span class="dim" id="recMsg_live"></span></div>
+  <details><summary>錄製檔</summary><div id="recList_live" class="note"></div></details>
+
+  <details open><summary>接收設定</summary>
+    <label>中心頻率 MHz <input id="freq" type="number" step="0.001" min="70" max="6000"></label>
+    <label>頻段預設 <select id="preset"><option value="">—</option></select></label>
+    <label>取樣率（可視頻寬） <select id="rate"></select></label>
+    <label>增益 dB <span><input id="gain" type="range" min="-15" max="60" step="1"> <b id="gainv"></b></span></label>
+    <label>FFT 點數 <select id="nfft"></select></label>
+    <label>平均次數 <input id="avg" type="number" min="1" max="64"></label>
+    <label>更新率 fps <input id="fps" type="number" min="1" max="20"></label>
+    <label>裁掉邊緣 % <input id="crop" type="number" min="0" max="40" step="1"></label>
+    <label>修正中心直流尖峰 <input id="dc_fix" type="checkbox"></label>
+    <div class="row"><button class="act" id="btnApply">套用設定</button></div>
+    <p class="note">只做接收；每次開始都會強制關閉 Bias-T，也不提供發射。數值為相對 dBFS，非校準 dBm。</p>
+  </details>
+
+  <details open><summary>顯示</summary>
+    <label title="整張圖扣掉本頻段的底噪，Y 軸改為高於底噪的 dB">相對底噪（dB） <input id="liverel" type="checkbox"></label>
+    <label>自動調整範圍 <input id="autoy" type="checkbox" checked></label>
+    <label>Y 軸最小 <input id="ymin" type="number" value="-100"></label>
+    <label>Y 軸最大 <input id="ymax" type="number" value="0"></label>
+    <label>瀑布圖最小 <input id="wmin" type="number" value="-90"></label>
+    <label>瀑布圖最大 <input id="wmax" type="number" value="-30"></label>
+    <label>顯示頻段名稱 <input id="showbands" type="checkbox" checked></label>
+    <label>顯示 WiFi 頻道 <input id="showwifi" type="checkbox" checked></label>
+    <label>標註最強訊號 <input id="showpeaks" type="checkbox" checked></label>
+    <label>峰值保持 <input id="peak" type="checkbox" checked></label>
+    <div class="row"><button class="sm" id="btnPeakReset">清除峰值</button></div>
+  </details>
+
+  <details><summary>基線比較（找出新出現的干擾）</summary>
+    <div class="row"><button class="sm" id="btnBase">以目前平均設為基線</button><button class="sm" id="btnBaseClear">清除</button></div>
+    <p class="note">環境正常時存下基線；之後灰線為基線，下方列出相對基線增加最多的頻率。</p>
+  </details>
+
+  <details><summary>占用率與空閒頻段建議</summary>
+    <label>門檻（高於底噪 dB） <input id="occ_thr" type="number" min="3" max="40"></label>
+    <label>需要的頻寬 MHz <select id="qwidth"><option>1</option><option>2</option><option selected>5</option><option>10</option><option>20</option></select></label>
+    <p class="note">占用率＝各頻率最近一段時間超過門檻的比例。建議窗口會在目前可視範圍內，挑占用率低、訊號弱的位置。</p>
+  </details>
+
+  <details><summary>頻段監看與事件紀錄</summary>
+    <label>啟用 <input id="watch_on" type="checkbox"></label>
+    <label>監看中心 MHz <input id="watch_f" type="number" step="0.001"></label>
+    <label>監看寬度 MHz <input id="watch_bw" type="number" step="0.1" min="0.01"></label>
+    <label>觸發：高於基線 dB <input id="watch_thr" type="number" min="1" max="40"></label>
+    <div class="row"><button class="sm" id="btnWatchView">以目前頻率填入</button><span class="note">（也可在頻譜上點一下取頻率）</span></div>
+    <p class="note">頻段功率超過自動追蹤的基線時，記錄時間、持續秒數與峰值頻率到「干擾事件」。修改後請按「套用設定」。</p>
+  </details>
+</aside>
+
+<section class="card">
+  <div class="kv">
+    <div><b>中心頻率</b><span id="k_f">—</span></div>
+    <div><b>可視範圍</b><span id="k_span">—</span></div>
+    <div><b>底噪（中位數）</b><span id="k_floor">—</span></div>
+    <div><b>最大值</b><span id="k_max">—</span></div>
+    <div><b>監看頻段功率</b><span id="k_band">—</span></div>
+    <div><b>游標</b><span id="k_cur">—</span></div>
+  </div>
+
+  <div class="sec">全頻段位置（白框＝目前可視範圍；點擊可跳到該頻率） <select id="ovsel" style="max-width:230px"></select></div>
+  <canvas id="ovw"></canvas>
+
+  <div class="sec">即時頻譜（藍＝平均、橘＝峰值保持、灰＝基線；點擊頻譜可取頻率）</div>
+  <canvas id="spec"></canvas>
+  <div class="sec">瀑布圖（時間往下）</div>
+  <canvas id="wf"></canvas>
+  <div class="note" id="wfv">游標移到瀑布圖上會顯示該點的值，移開後保留最後一次的讀數。</div>
+
+  <div class="two">
+    <div class="box"><h4>最強訊號</h4><table id="toplist"><tbody><tr><td class="dim">等待資料…</td></tr></tbody></table></div>
+    <div class="box"><h4>建議空閒窗口（可視範圍內）</h4><table id="quiet"><tbody><tr><td class="dim">等待資料…</td></tr></tbody></table></div>
+  </div>
+  <div id="deltas" class="note"></div>
+
+  <div class="sec">功率隨時間（藍＝最大值、橘＝監看頻段、紅點＝觸發；最近 5 分鐘）</div>
+  <canvas id="trend"></canvas>
+  <div class="sec">占用率（越高越常有訊號）</div>
+  <canvas id="occ"></canvas>
+</section>
+</main>
+
+<!-- ================= HOP ================= -->
+<main id="tab-hop" class="hidden">
+<aside>
+  <div id="hop_err" class="err-box hidden"></div>
+  <div class="row"><button id="btnHop" class="act">開始分區監控</button> <button class="sm" id="recBtn_hop" title="錄下每個頻區每一幀的頻譜（平均與峰值）">● 錄製</button> <span class="dim" id="recMsg_hop"></span></div>
+  <details><summary>錄製檔</summary><div id="recList_hop" class="note"></div></details>
+  <details open><summary>頻區設定</summary>
+    <label class="stack">預設組合 <select id="hop_preset"></select></label>
+    <label class="stack">頻區（每行：名稱, 頻率MHz 或 起-迄MHz）<textarea id="hop_zones" rows="9" spellcheck="false"></textarea></label>
+    <p class="note" id="hop_zinfo"></p>
+  </details>
+  <details open><summary>跳頻參數</summary>
+    <label>取樣率 <select id="hop_rate"><option value="20">20 MSPS</option><option value="30">30 MSPS</option><option value="40">40 MSPS</option><option value="56" selected>56 MSPS（建議，邊緣最平）</option></select></label>
+    <label>增益 dB <input id="hop_gain" type="number" min="-15" max="60" value="20"></label>
+    <label>每區停留 <select id="hop_dwell"><option value="5">5 ms</option><option value="10" selected>10 ms</option><option value="20">20 ms</option><option value="50">50 ms</option></select></label>
+    <label>裁掉邊緣 % <input id="hop_crop" type="number" min="5" max="35" value="25"></label>
+    <label>套用響應校正 <input id="hop_calib" type="checkbox" checked></label>
+    <div class="row"><button class="sm" id="hop_calbtn">建立響應校正（約 10 秒）</button></div>
+    <p class="note" id="hop_calinfo">—</p>
+    <p class="note">頻區邊緣會比中間高（接收器本身的特性）。校正會量出這個形狀並扣掉，<b>不需要終端負載</b>：保持天線連接即可，會在 3.7–4.9 GHz 的安靜頻段量測。每個取樣率要各建立一次。</p>
+  </details>
+  <details><summary>干擾事件紀錄</summary>
+    <label>寫入干擾事件 <input id="hop_log" type="checkbox" checked></label>
+    <label>觸發：高於區域基線 dB <input id="hop_trig" type="number" min="2" max="40" value="8"></label>
+    <p class="note">各區功率比自己的慢速基線高出門檻時，記錄時間、持續時間與峰值頻率，可到「干擾事件」分頁查看。</p>
+  </details>
+  <p class="note">原理：串流不中斷，用軟體在各頻區之間輪流切換。每個頻區只在輪到時才被觀察，所以<b>比一圈還短的突發訊號可能漏掉</b>；橘線的峰值保持（會慢慢衰減）可以補一部分。區域越多，一圈越久。只做接收，Bias-T 強制關閉。</p>
+</aside>
+<section class="card">
+  <div class="kv">
+    <div><b>頻區數／涵蓋</b><span id="h_cov">—</span></div>
+    <div><b>輪詢一圈</b><span id="h_cycle">—</span></div>
+    <div><b>每區觀察佔比</b><span id="h_duty">—</span></div>
+    <div><b>換頻／單次耗時</b><span id="h_hop">—</span></div>
+    <div><b>丟棄幀數</b><span id="h_drop">—</span></div>
+  </div>
+  <div class="box"><h4>各頻區最強訊號</h4><table id="h_top"><tbody><tr><td class="dim">尚未開始</td></tr></tbody></table></div>
+  <div class="tools">
+    <label>呈現方式 <select id="hop_view"><option value="comb">合併圖表（所有頻區連成一張）</option><option value="cards">分區卡片</option></select></label>
+    <label>平滑 <select id="hop_smooth"><option value="0.6">弱（反應快）</option><option value="0.3">中</option><option value="0.15" selected>強（較穩定）</option></select></label>
+    <label title="每個頻區各自扣掉自己的底噪，消除不同頻段間的增益差">相對底噪（dB） <input id="hop_rel" type="checkbox"></label>
+    <label>Y 軸 <input id="hop_ymin" type="number" value="-90"> ～ <input id="hop_ymax" type="number" value="-10"></label>
+    <label>瀑布圖 <input id="hop_wmin" type="number" value="-70"> ～ <input id="hop_wmax" type="number" value="-30"></label>
+    <button class="sm" id="hop_cal">重新校正範圍</button>
+  </div>
+  <div class="note">範圍在開始後自動校正一次，之後<b>固定不動</b>；需要時按「重新校正範圍」或直接改數字。藍＝平滑後的平均，橘＝峰值保持（每秒衰減約 3 dB），虛線＝底噪；紅色標記＝該區功率超過自己的基線。</div>
+  <div id="hop_comb">
+    <canvas id="hc_spec" class="hc"></canvas>
+    <canvas id="hc_wf"></canvas>
+    <div class="note" id="hc_wfv">游標移到瀑布圖上會顯示該點的值，移開後保留最後一次的讀數。</div>
+    <div class="note">圖中每一段是一組<b>有效偵測頻段</b>（已扣除兩側失真的邊緣），段與段之間用虛線隔開，<b>虛線之間的頻率沒有被監看</b>；上方標示每段的名稱與頻率範圍。瀑布圖每 1 秒更新一列，左側標示過去 15 分鐘的時間（每 1 分鐘一格）。</div>
+  </div>
+  <div id="hop_grid" class="zgrid hidden"></div>
+</section>
+</main>
+
+<!-- ================= SCAN ================= -->
+<main id="tab-scan" class="hidden">
+<aside>
+  <h3>執行新掃描</h3>
+  <label>起 MHz <input id="s_start" type="number" value="70"></label>
+  <label>迄 MHz <input id="s_stop" type="number" value="6000"></label>
+  <label>增益 dB <input id="s_gain" type="number" value="20"></label>
+  <label class="stack">模式 <select id="s_mode"><option value="fast">快速（約 3 分半，含峰值保持）</option><option value="full">完整（約 15 分鐘，較精準）</option></select></label>
+  <div class="row"><button class="act" id="btnSweep">開始掃描</button></div>
+  <div class="bar"><div id="sbar"></div></div>
+  <p class="note" id="smsg">—</p>
+  <p class="note">掃描時會暫停即時接收，完成後自動恢復。快速：全頻段實測約 3 分半，每個頻點取約 0.15 秒並記錄峰值保持（橘線），能看到突發訊號。完整：約 15 分鐘，每點取約 50 毫秒，只有平均值。</p>
+  <h3>檢視</h3>
+  <label class="stack">掃描檔 <select id="sel_a"></select></label>
+  <label title="每個頻段扣掉自己的局部底噪（10 百分位，±27 MHz），消除跨頻段的增益台階">相對底噪（dB） <input id="sw_rel" type="checkbox"></label>
+  <label class="stack">比較對象（顯示差值） <select id="sel_b"><option value="">（無）</option></select></label>
+  <div class="row"><button class="sm" id="btnReset">顯示全頻段</button><button class="sm" id="btnReload">重新整理清單</button><button class="sm" id="btnDelete" style="color:var(--bad);border-color:var(--bad)">刪除此掃描檔</button></div>
+  <p class="note" id="delmsg"></p>
+  <p class="note">滑鼠滾輪縮放，拖曳平移。選了比較對象後，下方顯示「掃描檔 − 比較對象」。</p>
+</aside>
+<section class="card">
+  <div class="kv"><div><b>範圍</b><span id="v_range">—</span></div><div><b>游標</b><span id="v_cur">—</span></div></div>
+  <canvas id="sw" style="height:380px"></canvas>
+  <canvas id="swd" style="height:130px;margin-top:8px" class="hidden"></canvas>
+</section>
+</main>
+
+<!-- ================= REPLAY ================= -->
+<main id="tab-replay" class="hidden" style="grid-template-columns:minmax(0,1fr)">
+<section class="card">
+  <div class="row"><select id="rp_sel" style="min-width:300px"></select><button class="sm" id="rp_load">載入</button><button class="sm" id="rp_refresh">重新整理清單</button><span class="dim" id="rp_msg">選一個錄製檔後按「載入」。</span></div>
+  <div class="row" id="rp_ctl" style="display:none">
+    <button class="act" id="rp_play">▶ 播放</button>
+    <label>速度 <select id="rp_speed"><option>1</option><option>2</option><option>5</option><option selected>10</option><option>30</option><option>60</option></select>×</label>
+    <input id="rp_seek" type="range" min="0" max="0" value="0" style="flex:1;min-width:200px">
+    <b id="rp_time">0:00 / 0:00</b>
+    <label>相對底噪 <input id="rp_rel" type="checkbox" checked></label>
+    <label id="rp_srcl">顯示 <select id="rp_src"><option value="p">平均</option><option value="k">峰值</option></select></label>
+    <label id="rp_segl">區段 <select id="rp_seg"></select></label>
+  </div>
+  <canvas id="rp_spec" style="height:320px;cursor:crosshair"></canvas>
+  <div class="note" id="rp_peaks" style="min-height:1.4em"></div>
+  <canvas id="rp_wf" style="height:560px;margin-top:6px;cursor:pointer"></canvas>
+  <div class="note" id="rp_info">上圖是游標所在時間的頻譜，下圖是整段錄製的瀑布圖（上＝開始、下＝結束，橫線＝目前時間）。點瀑布圖或拖拉滑桿可跳到任一時間；游標移到圖上會顯示該點的值。</div>
+</section>
+</main>
+
+<!-- ================= EVENTS ================= -->
+<main id="tab-events" class="hidden" style="grid-template-columns:minmax(0,1fr)">
+<section class="card">
+  <div class="row"><a class="sm" style="color:var(--acc)" href="/api/events.csv" download="events.csv">下載 CSV</a></div>
+  <div style="overflow-x:auto"><table><thead><tr><th>時間</th><th>持續秒數</th><th>監看頻段 MHz</th><th>峰值 dB</th><th>基線 dB</th><th>峰值頻率 MHz</th></tr></thead><tbody id="evbody"></tbody></table></div>
+  <p class="note" id="evnone">尚無事件。在「即時監控」啟用頻段監看後，這裡會記錄功率突然升高的時段，可用來對照無人機訊號中斷的時間。</p>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const BANDS=[["FM 廣播",87.5,108],["ISM 433",433.05,434.79],["ISM 868",863,870],["ISM 915",902,928],
+["GNSS L5/E5",1164,1215],["GNSS L2/G2",1215,1260],["GNSS E6/北斗 B3I",1260,1300],["GNSS L1/E1/B1/G1",1559,1610],["2.4G WiFi/BT",2400,2483.5],["NavIC S",2483.5,2500],["LTE B8 下行",925,960],["LTE B3 下行",1805,1880],["LTE B1/NR n1 下行",2110,2170],["LTE B7 下行",2620,2690],["n78 中華電信",3420,3510],["n78 遠傳",3340,3420],["n78 台灣大",3510,3570],["n78 原台灣之星",3300,3340],["LTE B28 下行",758,803],["2.6G TDD",2570,2620],["5.2G WiFi",5150,5250],["5.8G WiFi/圖傳",5725,5875]];
+const PRESETS=[["FM 廣播 98",98],["ISM 433",433.92],["ISM 868",868],["ISM 915",915],["L1/E1/B1C 1575.42（GPS・Galileo・北斗・QZSS）",1575.42],["北斗 B1I 1561.098",1561.098],["GLONASS G1 1602",1602],["L2 1227.6（GPS・QZSS）",1227.6],["GLONASS G2 1246",1246],["E5b/B2b 1207.14（Galileo・北斗）",1207.14],["L5/E5a/B2a 1176.45（GPS・Galileo・北斗・NavIC）",1176.45],["E6/L6 1278.75（Galileo・QZSS）",1278.75],["北斗 B3I 1268.52",1268.52],["NavIC S 2492.028",2492.028],
+["2.4G WiFi ch1",2412],["2.4G WiFi ch6",2437],["2.4G WiFi ch11",2462],["5.2G ch36–48",5210],["5.8G 5745",5745],["5.8G 5805",5805],["5.8G 5865",5865]];
+const WIFI5=[36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165];
+const RATES=[1,2,5,10,20,30,40,56];
+let st=null,frame=null,avgP=null,peakP=null,baseP=null,occArr=null,hist=[],cursor=null,es=null;
+let yr={lo:-100,hi:0,wlo:-90,whi:-30,init:false};
+const fmt=(v,d=1)=>v==null?"—":Number(v).toFixed(d);
+const mhz=h=>h/1e6;
+const COL={acc:"#4cc2ff",warn:"#ffb454",grid:"#222c38",mute:"#8793a5"};
+const EDGE=0.08; // outer fraction of the span where the receiver's filter roll-off raises the noise floor
+
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
+  ["live","hop","scan","replay","events"].forEach(t=>$("tab-"+t).classList.toggle("hidden",t!==b.dataset.tab));
+  if(b.dataset.tab==="scan")initScan();if(b.dataset.tab==="replay"&&window.rpOpen)rpOpen();if(b.dataset.tab==="events")loadEvents();if(b.dataset.tab==="live"){drawSpec();drawOverview()}
+});
+async function api(path,body){
+  const r=await fetch(path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
+  return r.json();
+}
+function sizeCanvas(c){const d=devicePixelRatio||1,w=Math.round(c.clientWidth*d),h=Math.round(c.clientHeight*d);if(c.width!==w||c.height!==h){c.width=w;c.height=h}return d}
+function niceStep(raw){const p=Math.pow(10,Math.floor(Math.log10(raw))),r=raw/p;return(r<1.5?1:r<3.5?2:r<7.5?5:10)*p}
+function turbo(t){t=Math.max(0,Math.min(1,t));const r=34.61+t*(1172.33-t*(10793.56-t*(33300.12-t*(38394.49-t*14825.05))));
+ const g=23.31+t*(557.33+t*(1225.33-t*(3574.96-t*(1073.77+t*707.56))));const b=27.2+t*(3211.1-t*(15327.97-t*(27814-t*(22569.18-t*6838.66))));
+ return[Math.max(0,Math.min(255,r)),Math.max(0,Math.min(255,g)),Math.max(0,Math.min(255,b))]}
+const LUT=Array.from({length:256},(_,i)=>turbo(i/255));
+
+// ---------- form / status ----------
+function fillSelects(){
+  $("rate").innerHTML=RATES.map(r=>`<option value="${r}">${r} MSPS（約 ${r} MHz）</option>`).join("");
+  $("nfft").innerHTML=(st.nffts||[]).map(n=>`<option>${n}</option>`).join("");
+  $("preset").innerHTML='<option value="">—</option>'+PRESETS.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("");
+}
+function loadForm(c){
+  $("freq").value=mhz(c.freq);$("rate").value=mhz(c.rate);$("gain").value=c.gain;$("gainv").textContent=c.gain;
+  $("nfft").value=c.nfft;$("avg").value=c.avg;$("fps").value=c.fps;$("crop").value=Math.round(c.crop*100);
+  $("dc_fix").checked=c.dc_fix;$("occ_thr").value=c.occ_thr;
+  $("watch_on").checked=c.watch_on;$("watch_f").value=mhz(c.watch_f);$("watch_bw").value=mhz(c.watch_bw);$("watch_thr").value=c.watch_thr;
+}
+function readForm(){
+  return {freq:$("freq").value*1e6,rate:$("rate").value*1e6,gain:+$("gain").value,nfft:+$("nfft").value,avg:+$("avg").value,
+    fps:+$("fps").value,crop:$("crop").value/100,dc_fix:$("dc_fix").checked,occ_thr:+$("occ_thr").value,
+    watch_on:$("watch_on").checked,watch_f:$("watch_f").value*1e6,watch_bw:$("watch_bw").value*1e6,watch_thr:+$("watch_thr").value};
+}
+
+// ---------- recording (server side, so it survives page reloads) ----------
+const recFmt=b=>b>1e6?(b/1e6).toFixed(1)+" MB":Math.round(b/1e3)+" KB",recDur=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+let recSeen="",recListT=0;
+function recStatus(s){
+  const rec=s.rec||{};let sig="";
+  ["live","hop"].forEach(k=>{const r=rec[k],b=$("recBtn_"+k),m=$("recMsg_"+k);if(!b)return;
+    const can=k==="live"?s.mode==="live":!!(s.hop&&s.hop.running);
+    b.textContent=r?"■ 停止錄製":"● 錄製";b.className="sm"+(r?" stop":"");b.disabled=!r&&!can;
+    m.textContent=r?`錄製中 ${recDur(r.secs)} · ${recFmt(r.bytes)}`:"";sig+=r?r.name:"-"});
+  if(sig!==recSeen||Date.now()-recListT>15000){recSeen=sig;recListT=Date.now();recList()}}
+async function recList(){
+  let rows=[];try{rows=await api("/api/recs")}catch(e){return}
+  ["live","hop"].forEach(k=>{const el=$("recList_"+k);if(!el)return;const mine=rows.filter(r=>r.kind===k);
+    el.innerHTML=mine.length?mine.map(r=>`<div>${r.active?"● ":""}<a href="/api/rec/download?name=${encodeURIComponent(r.name)}">${esc(r.name)}</a>　${recFmt(r.bytes)}${r.active?"（錄製中）":`　<a href="#" data-del="${esc(r.name)}">移到垃圾桶</a>`}</div>`).join(""):"還沒有錄製檔。檔案存在 webmon/recordings/（gzip 壓縮的 JSON Lines）。";
+    el.querySelectorAll("[data-del]").forEach(a=>a.onclick=async e=>{e.preventDefault();if(confirm("把 "+a.dataset.del+" 移到 recordings/.trash？")){await api("/api/rec/delete",{name:a.dataset.del});recList()}})})}
+["live","hop"].forEach(k=>{const b=$("recBtn_"+k);if(b)b.onclick=async()=>{
+  const on=!!(st&&st.rec&&st.rec[k]);const r=await api("/api/rec",{kind:k,action:on?"stop":"start"});if(r&&r.ok===false)alert(r.msg);
+  applyStatus(await api("/api/status"),false)}});
+function applyStatus(s,first){
+  st=s;if(first){fillSelects();loadForm(s.cfg)}
+  const m=$("mode");m.textContent={idle:"待機",live:"接收中",sweep:"掃描中",hop:"分區監控中",calib:"校正中"}[s.mode]||s.mode;m.className="pill "+(s.error?"err":s.mode);
+  const d=s.device||{};
+  $("dev").textContent=d.present?`${d.board||"BladeRF"} · FW ${d.firmware||"?"} · FPGA ${(d.fpga||"?").split(" ")[0]}`:"裝置：未偵測（可能被其他程式佔用）";
+  const eb=$("errbox");eb.classList.toggle("hidden",!s.error);eb.textContent=s.error||"";
+  $("btnLive").textContent=s.mode==="live"?"停止接收":"開始接收";$("btnLive").className="act"+(s.mode==="live"?" stop":"");$("btnLive").disabled=s.mode==="sweep"||s.mode==="hop";
+  const sw=s.sweep||{};$("sbar").style.width=sw.total?(100*sw.progress/sw.total)+"%":"0";
+  $("smsg").textContent=sw.running?`${sw.progress}/${sw.total}  ${sw.msg}`:(sw.msg||"—");$("btnSweep").disabled=!!sw.running;if(window.hopStatus)hopStatus(s);recStatus(s);
+}
+async function poll(){try{applyStatus(await api("/api/status"),false)}catch(e){}setTimeout(poll,1500)}
+
+// ---------- stream ----------
+function startStream(){if(es)es.close();es=new EventSource("/api/stream");es.onmessage=e=>onFrame(JSON.parse(e.data))}
+let wfBuf=document.createElement("canvas"),wfLen=0,lastUi=0;
+function onFrame(f){
+  const n=f.p.length;
+  if(!avgP||avgP.length!==n||!frame||frame.f0!==f.f0||frame.df!==f.df){avgP=f.p.slice();peakP=f.p.slice();baseP=null;hist=[];wfLen=0;occArr=null;yr.init=false;$("deltas").textContent=""}
+  frame=f;
+  for(let i=0;i<n;i++){avgP[i]=avgP[i]*0.7+f.p[i]*0.3;if(f.p[i]>peakP[i])peakP[i]=f.p[i]}
+  if(!$("peak").checked)peakP=f.p.slice();
+  if(f.occ)occArr=f.occ;
+  hist.push({t:f.t,max:f.max,band:f.band,alert:f.alert});
+  const cut=f.t-300;while(hist.length&&hist[0].t<cut)hist.shift();
+  autoRange(f);
+  drawWF(f);drawSpec();drawTrend();if(f.occ)drawOcc(f.occ);
+  $("k_f").textContent=fmt(f.freq/1e6,3)+" MHz";
+  $("k_span").textContent=fmt((n-1)*f.df/1e6,1)+" MHz";
+  $("k_floor").textContent=fmt(f.floor)+" dBFS";$("k_max").textContent=fmt(f.max)+" dBFS";
+  $("k_band").textContent=f.band==null?"—":fmt(f.band)+" dB"+(f.base!=null?`（基線 ${fmt(f.base)}）`:"");
+  if(baseP&&baseP.length===n)updateDeltas();
+  const now=performance.now();if(now-lastUi>1000){lastUi=now;updateTop();updateQuiet();drawOverview()}
+}
+const liveRel=()=>$("liverel").checked;
+const liveOff=f=>liveRel()&&f?f.floor:0;   // in relative mode everything is drawn as dB above this frame's floor
+function autoRange(f){
+  if(!$("autoy").checked){yr.lo=+$("ymin").value;yr.hi=+$("ymax").value;yr.wlo=+$("wmin").value;yr.whi=+$("wmax").value;return}
+  const O=liveOff(f);let mx=-1e9;for(const v of avgP)if(v>mx)mx=v;
+  if($("peak").checked)for(const v of peakP)if(v>mx)mx=v;mx-=O;const fl=f.floor-O;
+  const tlo=Math.floor((fl-12)/5)*5,thi=Math.max(Math.ceil((mx+6)/5)*5,tlo+40);
+  const twlo=fl-4,twhi=fl+Math.max(22,Math.min(45,(mx-fl)*0.85));
+  if(!yr.init){yr={lo:tlo,hi:thi,wlo:twlo,whi:twhi,init:true}}
+  else{const a=0.08;yr.lo+=(tlo-yr.lo)*a;yr.hi+=(thi-yr.hi)*a;yr.wlo+=(twlo-yr.wlo)*a;yr.whi+=(twhi-yr.whi)*a}
+  $("ymin").value=Math.round(yr.lo);$("ymax").value=Math.round(yr.hi);$("wmin").value=Math.round(yr.wlo);$("wmax").value=Math.round(yr.whi);
+}
+
+// ---------- drawing: spectrum ----------
+const spec=$("spec"),wf=$("wf"),trend=$("trend"),occc=$("occ");
+function specMargins(d){return{l:50*d,r:12*d,t:20*d,b:26*d}}
+function xOfF(f,W,m){return m.l+(f-frame.f0)/((frame.p.length-1)*frame.df)*(W-m.l-m.r)}
+function findPeaks(arr,minAbove,maxN){
+  const n=arr.length,fl=frame.floor,c=[],e=Math.max(2,Math.round(n*EDGE));
+  for(let i=e;i<n-e;i++){const v=arr[i];if(v>=fl+minAbove&&v>=arr[i-1]&&v>=arr[i+1]&&v>=arr[i-2]&&v>=arr[i+2])c.push(i)}
+  c.sort((a,b)=>arr[b]-arr[a]);const out=[];
+  for(const i of c){if(out.length>=maxN)break;if(out.every(j=>Math.abs(j-i)>n/25))out.push(i)}
+  return out;
+}
+function drawSpec(){
+  if(!frame||!avgP)return;
+  const d=sizeCanvas(spec),ctx=spec.getContext("2d"),W=spec.width,H=spec.height,m=specMargins(d);spec._m=m;
+  const O=liveOff(frame),y0=yr.lo,y1=yr.hi,yOf=v=>m.t+(1-(Math.max(y0,Math.min(y1,v-O))-y0)/(y1-y0))*(H-m.t-m.b);
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);
+  const n=frame.p.length,fa=frame.f0,fb=fa+(n-1)*frame.df,span=fb-fa;
+  ctx.font=`${11*d}px sans-serif`;
+  // band shading
+  if($("showbands").checked)BANDS.forEach(b=>{const a=b[1]*1e6,c=b[2]*1e6;if(c<fa||a>fb)return;
+    const x0=xOfF(Math.max(a,fa),W,m),x1=xOfF(Math.min(c,fb),W,m);ctx.fillStyle="#4cc2ff12";ctx.fillRect(x0,m.t,x1-x0,H-m.t-m.b);
+    ctx.fillStyle="#7fb7d6";ctx.fillText(b[0],Math.max(x0,m.l)+4*d,m.t+12*d)});
+  // wifi channels
+  if($("showwifi").checked&&span<=300e6){
+    const lab=(x0,x1,t)=>{ctx.fillStyle="#ffffff0b";ctx.fillRect(x0,m.t,x1-x0,H-m.t-m.b);ctx.strokeStyle="#ffffff22";ctx.beginPath();ctx.moveTo(x0,m.t);ctx.lineTo(x0,H-m.b);ctx.stroke();
+      ctx.fillStyle="#9aa6b8";ctx.fillText(t,(x0+x1)/2-ctx.measureText(t).width/2,H-m.b-6*d)};
+    if(fb>2400e6&&fa<2484e6)for(let ch=1;ch<=13;ch++){const c=(2407+5*ch)*1e6,a=c-10e6,b=c+10e6;if(b<fa||a>fb)continue;lab(xOfF(Math.max(a,fa),W,m),xOfF(Math.min(b,fb),W,m),"ch"+ch)}
+    if(fb>5170e6&&fa<5835e6)WIFI5.forEach(ch=>{const c=(5000+5*ch)*1e6,a=c-10e6,b=c+10e6;if(b<fa||a>fb)return;lab(xOfF(Math.max(a,fa),W,m),xOfF(Math.min(b,fb),W,m),"ch"+ch)});
+  }
+  // watch band
+  if($("watch_on").checked){const wf0=$("watch_f").value*1e6,bw=$("watch_bw").value*1e6;
+    const x0=xOfF(Math.max(wf0-bw/2,fa),W,m),x1=xOfF(Math.min(wf0+bw/2,fb),W,m);
+    if(x1>x0){ctx.fillStyle=frame.alert?"#ff6b6b33":"#ffb45422";ctx.fillRect(x0,m.t,x1-x0,H-m.t-m.b);ctx.strokeStyle=frame.alert?"#ff6b6b":"#ffb454";ctx.strokeRect(x0,m.t,x1-x0,H-m.t-m.b)}}
+  // grid
+  ctx.lineWidth=1;ctx.strokeStyle=COL.grid;ctx.fillStyle=COL.mute;
+  const ys=niceStep((y1-y0)/6);
+  for(let v=Math.ceil(y0/ys)*ys;v<=y1;v+=ys){const y=yOf(v+O);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(W-m.r,y);ctx.stroke();ctx.fillText(Math.round(v),6*d,y+4*d)}
+  const step=niceStep(span/8);
+  for(let f=Math.ceil(fa/step)*step;f<=fb;f+=step){const x=xOfF(f,W,m);ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,H-m.b);ctx.stroke();
+    const t=(f/1e6).toFixed(step<1e6?1:0);ctx.fillText(t,x-ctx.measureText(t).width/2,H-8*d)}
+  ctx.fillStyle=COL.mute;ctx.fillText("MHz",W-m.r-26*d,H-8*d);
+  // unreliable edges (filter roll-off)
+  {const ew=(W-m.l-m.r)*EDGE;ctx.fillStyle="#00000066";ctx.fillRect(m.l,m.t,ew,H-m.t-m.b);ctx.fillRect(W-m.r-ew,m.t,ew,H-m.t-m.b);
+   ctx.fillStyle="#7a8594";ctx.fillText("邊緣失真",m.l+4*d,H-m.b-6*d);const tw=ctx.measureText("邊緣失真").width;ctx.fillText("邊緣失真",W-m.r-tw-4*d,H-m.b-6*d)}
+  // center marker
+  const xc=xOfF(frame.freq,W,m);ctx.setLineDash([4*d,4*d]);ctx.strokeStyle="#ffffff30";ctx.beginPath();ctx.moveTo(xc,m.t);ctx.lineTo(xc,H-m.b);ctx.stroke();ctx.setLineDash([]);
+  // noise floor
+  const yf=yOf(frame.floor);ctx.setLineDash([6*d,5*d]);ctx.strokeStyle="#5fd68a88";ctx.beginPath();ctx.moveTo(m.l,yf);ctx.lineTo(W-m.r,yf);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle="#5fd68a";ctx.fillText(liveRel()?"底噪 0 dB（"+frame.floor.toFixed(0)+" dBFS）":"底噪 "+frame.floor.toFixed(0),W-m.r-(liveRel()?150:70)*d,yf-4*d);
+  const xAt=i=>m.l+i/(n-1)*(W-m.l-m.r);
+  const line=(arr,col,w)=>{ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w*d;ctx.lineJoin="round";arr.forEach((v,i)=>{const x=xAt(i),y=yOf(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()};
+  if(baseP&&baseP.length===n)line(baseP,"#8a95a6",1.1);
+  if($("peak").checked)line(peakP,"#ffb454aa",1);
+  // filled average
+  const g=ctx.createLinearGradient(0,m.t,0,H-m.b);g.addColorStop(0,"#4cc2ff66");g.addColorStop(1,"#4cc2ff05");
+  ctx.beginPath();avgP.forEach((v,i)=>{const x=xAt(i),y=yOf(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.lineTo(xAt(n-1),H-m.b);ctx.lineTo(xAt(0),H-m.b);ctx.closePath();ctx.fillStyle=g;ctx.fill();
+  line(avgP,"#6fd0ff",1.6);
+  // peak labels
+  if($("showpeaks").checked){ctx.font=`bold ${11*d}px sans-serif`;
+    findPeaks(avgP,12,4).forEach(i=>{const x=xAt(i),y=yOf(avgP[i]),t=`${((frame.f0+i*frame.df)/1e6).toFixed(2)} MHz  ${liveRel()?"+"+(avgP[i]-frame.floor).toFixed(0)+" dB":avgP[i].toFixed(0)}`;
+      ctx.fillStyle="#ffd36e";ctx.beginPath();ctx.moveTo(x,y-3*d);ctx.lineTo(x-4*d,y-10*d);ctx.lineTo(x+4*d,y-10*d);ctx.closePath();ctx.fill();
+      const tw=ctx.measureText(t).width;let tx=Math.min(Math.max(x-tw/2,m.l),W-m.r-tw);const ty=Math.max(y-16*d,m.t+26*d);
+      ctx.fillStyle="#000a";ctx.fillRect(tx-3*d,ty-11*d,tw+6*d,14*d);ctx.fillStyle="#ffd36e";ctx.fillText(t,tx,ty)});ctx.font=`${11*d}px sans-serif`}
+  if(cursor!=null){ctx.strokeStyle="#ffffff88";ctx.beginPath();ctx.moveTo(cursor.x*d,m.t);ctx.lineTo(cursor.x*d,H-m.b);ctx.stroke()}
+}
+
+// ---------- waterfall / trend / occupancy ----------
+const WF_ROWS=900,WF_DT=1000;   // live waterfall: one row per second (max over that second, so short bursts survive) = 15 minutes
+let wfAcc=null,wfT=0,wfRows=[];   // wfRows: the values behind each waterfall row (newest first), for the hover read-out
+function drawWF(f){
+  const n=f.p.length;if(wfLen!==n){wfBuf.width=n;wfBuf.height=WF_ROWS;wfLen=n;wfBuf.getContext("2d").clearRect(0,0,n,WF_ROWS);wfAcc=null;wfT=0;wfRows=[]}
+  const c=wfBuf.getContext("2d"),off=liveOff(f);
+  if(!wfAcc)wfAcc=new Float32Array(n).fill(-1e9);for(let i=0;i<n;i++){const v=f.p[i]-off;if(v>wfAcc[i])wfAcc[i]=v}
+  const now=performance.now();
+  if(!wfT)wfT=now;
+  if(now-wfT>=WF_DT){wfT=now;c.drawImage(wfBuf,0,1);
+    const img=c.createImageData(n,1),lo=yr.wlo,hi=yr.whi;
+    for(let i=0;i<n;i++){const t=(wfAcc[i]-lo)/(hi-lo),col=LUT[Math.max(0,Math.min(255,Math.round(t*255)))];img.data[i*4]=col[0];img.data[i*4+1]=col[1];img.data[i*4+2]=col[2];img.data[i*4+3]=255}
+    c.putImageData(img,0,0);wfRows.unshift(Float32Array.from(wfAcc));if(wfRows.length>WF_ROWS)wfRows.pop();wfAcc.fill(-1e9)}
+  const d=sizeCanvas(wf),ctx=wf.getContext("2d"),m=specMargins(d);
+  ctx.fillStyle="#000";ctx.fillRect(0,0,wf.width,wf.height);ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(wfBuf,m.l,0,wf.width-m.l-m.r,wf.height);
+  ctx.fillStyle=COL.mute;ctx.font=`${10*d}px sans-serif`;ctx.fillText("現在",6*d,12*d);
+  // time scale on the left: a tick and label every minute
+  ctx.strokeStyle="#ffffff44";ctx.lineWidth=d;
+  for(let s=60;s<=WF_ROWS*WF_DT/1000;s+=60){const y=s/(WF_ROWS*WF_DT/1000)*wf.height;ctx.beginPath();ctx.moveTo(m.l-6*d,y);ctx.lineTo(m.l,y);ctx.stroke();
+    ctx.setLineDash([2*d,5*d]);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(wf.width-m.r,y);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillText(`-${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`,6*d,y+(s>=WF_ROWS*WF_DT/1000?-2:4)*d)}
+  // colour key
+  const kx=wf.width-m.r-14*d,kh=wf.height*0.5,ky=wf.height*0.25;for(let i=0;i<kh;i++){const c2=LUT[Math.round(255*(1-i/kh))];ctx.fillStyle=`rgb(${c2[0]},${c2[1]},${c2[2]})`;ctx.fillRect(kx,ky+i,10*d,1)}
+  ctx.fillStyle="#fff";ctx.fillText(Math.round(yr.whi),kx-26*d,ky+8*d);ctx.fillText(Math.round(yr.wlo),kx-26*d,ky+kh);
+}
+function drawTrend(){
+  const d=sizeCanvas(trend),ctx=trend.getContext("2d"),W=trend.width,H=trend.height,m={l:50*d,r:12*d,t:8*d,b:16*d};
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);if(hist.length<2)return;
+  let lo=1e9,hi=-1e9;hist.forEach(h=>{[h.max,h.band].forEach(v=>{if(v!=null){lo=Math.min(lo,v);hi=Math.max(hi,v)}})});hi=Math.max(hi,lo+6);lo-=2;hi+=2;
+  const t0=hist[0].t,t1=hist[hist.length-1].t,xs=t=>m.l+(t-t0)/Math.max(1,t1-t0)*(W-m.l-m.r),ys=v=>m.t+(1-(v-lo)/(hi-lo))*(H-m.t-m.b);
+  ctx.font=`${10*d}px sans-serif`;ctx.fillStyle=COL.mute;ctx.fillText(hi.toFixed(0),6*d,m.t+8*d);ctx.fillText(lo.toFixed(0),6*d,H-m.b);
+  ctx.fillText("−"+Math.round(t1-t0)+" 秒",m.l,H-3*d);ctx.fillText("現在",W-m.r-26*d,H-3*d);
+  const ln=(k,col)=>{ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=1.3*d;let s=false;hist.forEach(h=>{const v=h[k];if(v==null){s=false;return}const x=xs(h.t),y=ys(v);s?ctx.lineTo(x,y):ctx.moveTo(x,y);s=true});ctx.stroke()};
+  ln("max",COL.acc);ln("band",COL.warn);
+  hist.forEach(h=>{if(h.alert&&h.band!=null){ctx.fillStyle="#ff6b6b";ctx.fillRect(xs(h.t)-1.5*d,ys(h.band)-1.5*d,4*d,4*d)}});
+}
+function drawOcc(o){
+  const d=sizeCanvas(occc),ctx=occc.getContext("2d"),W=occc.width,H=occc.height,m=specMargins(d);
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);const w=(W-m.l-m.r)/o.length,tp=6*d,bt=4*d,h=H-tp-bt;
+  // occupancy is usually a few %, so the scale follows the data (top = next 10/25/50/100 above the max) instead of a fixed 100%
+  let mx=0;for(let i=0;i<o.length;i++)if(o[i]>mx)mx=o[i];const top=[10,25,50,100].find(v=>mx<=v*0.9)||100;
+  ctx.strokeStyle=COL.grid;ctx.lineWidth=d;ctx.fillStyle=COL.mute;ctx.font=`${10*d}px sans-serif`;
+  for(const v of [0,top/2,top]){const y=tp+h*(1-v/top);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(W-m.r,y);ctx.stroke();ctx.fillText(v+"%",6*d,Math.max(10*d,y+3*d))}
+  for(let i=0;i<o.length;i++){const t=Math.min(1,o[i]/top);if(t<0.005)continue;const c=LUT[Math.round(40+Math.min(1,o[i]/100*2)*215)];ctx.fillStyle=`rgb(${c[0]},${c[1]},${c[2]})`;ctx.fillRect(m.l+i*w,tp+h*(1-t),Math.ceil(w)+1,h*t)}
+  ctx.fillStyle=COL.mute;ctx.fillText(`縮放：滿格＝${top}%`,W-m.r-90*d,12*d);
+}
+
+// ---------- analysis panels ----------
+function updateDeltas(){
+  const n=avgP.length,out=[];for(let i=0;i<n;i++)out.push([avgP[i]-baseP[i],i]);
+  out.sort((a,b)=>b[0]-a[0]);const seen=[],top=[];
+  for(const[dv,i]of out){if(top.length>=4)break;if(seen.some(j=>Math.abs(j-i)<n/40))continue;seen.push(i);top.push(`${((frame.f0+i*frame.df)/1e6).toFixed(3)} MHz：${dv>=0?"+":""}${dv.toFixed(1)} dB`)}
+  $("deltas").textContent="相對基線增加最多："+top.join("　｜　");
+}
+function updateTop(){
+  if(!frame||!avgP)return;const pk=findPeaks(avgP,8,6);
+  $("toplist").innerHTML=pk.length?pk.map(i=>{const f=(frame.f0+i*frame.df)/1e6,o=occArr?occArr[i]:null;
+    return `<tr><td><b>${f.toFixed(3)}</b> MHz</td><td>${avgP[i].toFixed(1)} dBFS</td><td class="dim">+${(avgP[i]-frame.floor).toFixed(0)} dB</td><td class="dim">${o==null?"":"占用 "+o+"%"}</td></tr>`}).join("")
+    :'<tr><td class="dim">可視範圍內沒有明顯高於底噪的訊號</td></tr>';
+}
+function updateQuiet(){
+  if(!frame||!avgP||!occArr)return;
+  const n=avgP.length,wBins=Math.max(1,Math.round(+$("qwidth").value*1e6/frame.df));
+  if(wBins>=n){$("quiet").innerHTML='<tr><td class="dim">可視範圍小於所需頻寬，請提高取樣率</td></tr>';return}
+  const pre=new Float64Array(n+1),preO=new Float64Array(n+1);for(let i=0;i<n;i++){pre[i+1]=pre[i]+Math.pow(10,avgP[i]/10);preO[i+1]=preO[i]+occArr[i]}
+  const cand=[];let mxq=[];
+  const e0=Math.round(n*EDGE);
+  for(let i=e0;i+wBins<=n-e0;i++){let mx=-1e9;for(let k=i;k<i+wBins;k++)if(avgP[k]>mx)mx=avgP[k];cand.push({i,mx,occ:(preO[i+wBins]-preO[i])/wBins,mean:10*Math.log10((pre[i+wBins]-pre[i])/wBins)})}
+  cand.sort((a,b)=>(a.occ*0.5+(a.mx-frame.floor))-(b.occ*0.5+(b.mx-frame.floor)));
+  const out=[];for(const c of cand){if(out.length>=3)break;if(out.every(o=>Math.abs(o.i-c.i)>=wBins))out.push(c)}
+  $("quiet").innerHTML=out.map(c=>{const f=(frame.f0+(c.i+wBins/2)*frame.df)/1e6,clean=c.mx-frame.floor<6&&c.occ<3;
+    return `<tr><td><b>${f.toFixed(2)}</b> MHz</td><td>最強 ${c.mx.toFixed(0)} dBFS（+${(c.mx-frame.floor).toFixed(0)}）</td><td class="dim">占用 ${c.occ.toFixed(0)}%</td><td class="${clean?"good":"dim"}">${clean?"乾淨":"有訊號"}</td></tr>`}).join("");
+}
+
+// widest range class (500 MHz buckets) first, then newest
+const cls=s=>Math.round(((s.fmax-s.fmin)||0)/500);
+const bestSweep=(a,b)=>cls(b)-cls(a)||(a.mtime<b.mtime?1:-1);
+// ---------- overview (wideband context) ----------
+let ov={name:null,data:null,list:[]};
+async function initOverview(){
+  const L=await api("/api/sweeps");ov.list=L;if(!L.length){return}
+  const wide=L.slice().sort(bestSweep);
+  $("ovsel").innerHTML=wide.map(s=>`<option value="${s.name}">${s.name}</option>`).join("");
+  $("ovsel").onchange=()=>loadOverview($("ovsel").value);loadOverview(wide[0].name);
+}
+async function loadOverview(name){ov.name=name;ov.data=await api(`/api/sweep?name=${encodeURIComponent(name)}&lo=0&hi=100000&points=1400`);drawOverview()}
+function drawOverview(){
+  const c=$("ovw");if(!ov.data||!ov.data.f.length||c.offsetParent===null)return;
+  const d=sizeCanvas(c),ctx=c.getContext("2d"),W=c.width,H=c.height,m={l:50*d,r:12*d,t:6*d,b:16*d},D=ov.data;
+  const flo=D.f[0],fhi=D.f[D.f.length-1];ov.rng=[flo,fhi,m,W];
+  let lo=Math.min(...D.mean),hi=Math.max(...D.max);hi=Math.max(hi,lo+10);
+  const xs=f=>m.l+(f-flo)/(fhi-flo)*(W-m.l-m.r),ys=v=>m.t+(1-(v-lo)/(hi-lo))*(H-m.t-m.b);
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);ctx.font=`${10*d}px sans-serif`;
+  BANDS.forEach(b=>{if(b[2]<flo||b[1]>fhi)return;ctx.fillStyle="#4cc2ff18";const x0=xs(Math.max(b[1],flo)),x1=xs(Math.min(b[2],fhi));ctx.fillRect(x0,m.t,Math.max(2*d,x1-x0),H-m.t-m.b)});
+  ctx.fillStyle=COL.mute;const step=niceStep((fhi-flo)/8);for(let f=Math.ceil(flo/step)*step;f<=fhi;f+=step){const x=xs(f);ctx.fillRect(x,H-m.b,1,4*d);ctx.fillText(f,x-8*d,H-3*d)}
+  const ln=(arr,col,w)=>{ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w*d;arr.forEach((v,i)=>{const x=xs(D.f[i]),y=ys(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()};
+  ln(D.max,"#ffb45466",1);ln(D.mean,"#4cc2ff",1.2);
+  if(frame){const a=frame.f0/1e6,b=(frame.f0+(frame.p.length-1)*frame.df)/1e6,x0=xs(a),x1=xs(b),w=Math.max(4*d,x1-x0);
+    ctx.fillStyle="#ffffff30";ctx.fillRect(x0-(w-(x1-x0))/2,m.t,w,H-m.t-m.b);ctx.strokeStyle="#fff";ctx.lineWidth=1.2*d;ctx.strokeRect(x0-(w-(x1-x0))/2,m.t,w,H-m.t-m.b)}
+}
+$("ovw").onclick=e=>{const c=$("ovw");if(!ov.rng)return;const [flo,fhi,m,W]=ov.rng,d=devicePixelRatio||1,r=c.getBoundingClientRect();
+  const fr=((e.clientX-r.left)*d-m.l)/(W-m.l-m.r);if(fr<0||fr>1)return;const f=flo+fr*(fhi-flo);
+  $("freq").value=f.toFixed(3);clearTimeout(ovTimer);ovTimer=setTimeout(()=>$("btnApply").click(),500)};
+let ovTimer=null;
+$("ovw").onmousemove=e=>{const c=$("ovw");if(!ov.rng)return;const [flo,fhi,m,W]=ov.rng,d=devicePixelRatio||1,r=c.getBoundingClientRect();
+  const fr=((e.clientX-r.left)*d-m.l)/(W-m.l-m.r);if(fr<0||fr>1)return;const f=flo+fr*(fhi-flo);
+  const tip=$("tip");tip.style.display="block";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";tip.textContent=f.toFixed(1)+" MHz（點擊跳到此頻率）"};
+$("ovw").onmouseleave=()=>$("tip").style.display="none";
+
+// ---------- spectrum interaction ----------
+spec.onmousemove=e=>{if(!frame||!spec._m)return;const r=spec.getBoundingClientRect(),d=devicePixelRatio||1,m=spec._m;
+  const x=e.clientX-r.left,frac=(x*d-m.l)/(spec.width-m.l-m.r);if(frac<0||frac>1)return;
+  const i=Math.round(frac*(frame.p.length-1)),f=(frame.f0+i*frame.df)/1e6;cursor={x};
+  const t=`${f.toFixed(3)} MHz\n${liveRel()?`平均 +${(avgP[i]-frame.floor).toFixed(1)}　峰值 +${(peakP[i]-frame.floor).toFixed(1)} dB（底噪 ${frame.floor.toFixed(1)} dBFS）`:`平均 ${avgP[i].toFixed(1)}　峰值 ${peakP[i].toFixed(1)} dBFS`}`+(occArr?`\n占用 ${occArr[i]}%`:"")+(baseP&&baseP.length===avgP.length?`\nΔ基線 ${(avgP[i]-baseP[i]).toFixed(1)} dB`:"");
+  $("k_cur").textContent=f.toFixed(3)+" MHz";const tip=$("tip");tip.style.display="block";tip.style.whiteSpace="pre";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";tip.textContent=t;drawSpec()};
+wf.onmousemove=e=>{if(!frame||!wfRows.length)return;const r=wf.getBoundingClientRect(),d=devicePixelRatio||1,m=specMargins(d);
+  const x=e.clientX-r.left,frac=(x*d-m.l)/(wf.width-m.l-m.r),row=Math.floor((e.clientY-r.top)/r.height*WF_ROWS),tip=$("tip");
+  if(frac<0||frac>1||row<0||row>=wfRows.length){tip.style.display="none";return}
+  const n=wfRows[row].length,i=Math.max(0,Math.min(n-1,Math.round(frac*(n-1)))),f=(frame.f0+i*frame.df)/1e6,v=wfRows[row][i],ago=row*WF_DT/1000;
+  tip.style.display="block";tip.style.whiteSpace="pre";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";
+  tip.textContent=`${f.toFixed(3)} MHz\n${ago<1?"現在":`${Math.floor(ago/60)}:${String(Math.floor(ago%60)).padStart(2,"0")} 前`}\n${liveRel()?`+${v.toFixed(1)} dB（高於底噪）`:`${v.toFixed(1)} dBFS`}（該秒最大值）`;$("wfv").textContent=tip.textContent.replace(/\n/g,"　")};
+wf.onmouseleave=()=>{$("tip").style.display="none";$("tip").style.whiteSpace=""};
+spec.onmouseleave=()=>{cursor=null;$("tip").style.display="none";$("tip").style.whiteSpace="";drawSpec()};
+spec.onclick=e=>{if(!frame||!spec._m)return;const r=spec.getBoundingClientRect(),d=devicePixelRatio||1,m=spec._m;
+  const frac=((e.clientX-r.left)*d-m.l)/(spec.width-m.l-m.r);if(frac<0||frac>1)return;$("watch_f").value=((frame.f0+frac*(frame.p.length-1)*frame.df)/1e6).toFixed(3)};
+
+// ---------- controls ----------
+$("gain").oninput=()=>$("gainv").textContent=$("gain").value;
+$("preset").onchange=()=>{const v=$("preset").value;if(v!=="")$("freq").value=PRESETS[v][1]};
+$("btnApply").onclick=async()=>{applyStatus(await api("/api/config",readForm()),false)};
+$("btnLive").onclick=async()=>{
+  if(st.mode==="live"){await api("/api/live",{action:"stop"})}
+  else{await api("/api/config",readForm());const r=await api("/api/live",{action:"start"});if(!r.ok)alert(r.msg)}
+  applyStatus(await api("/api/status"),false)};
+$("btnRefresh").onclick=async()=>{applyStatus(await api("/api/refresh_device",{}),false)};
+$("btnPeakReset").onclick=()=>{if(frame)peakP=frame.p.slice()};
+$("btnBase").onclick=()=>{if(avgP)baseP=avgP.slice()};
+$("btnBaseClear").onclick=()=>{baseP=null;$("deltas").textContent=""};
+$("btnWatchView").onclick=()=>{if(!frame)return;$("watch_f").value=(frame.freq/1e6).toFixed(3);$("watch_bw").value=Math.max(0.1,frame.rate/1e6*0.5).toFixed(1)};
+["ymin","ymax","wmin","wmax"].forEach(i=>$(i).onchange=()=>{$("autoy").checked=false;autoRange(frame||{floor:-60});drawSpec()});
+$("liverel").onchange=()=>{yr={};if(frame){autoRange(frame)}wfLen=0;drawSpec()};
+["showbands","showwifi","showpeaks","peak","autoy","qwidth"].forEach(i=>$(i).onchange=()=>{drawSpec();updateQuiet()});
+addEventListener("resize",()=>{drawSpec();drawTrend();drawOverview();if(sc.data)drawScan()});
+
+// ---------- scan tab ----------
+let sc={lo:70,hi:6000,full:[70,6000],data:null,diff:null},scanInit=false,drag=null;
+async function initScan(){
+  const L=await api("/api/sweeps");const opt=L.map(s=>`<option value="${s.name}">${s.name}  (${s.fmin==null?"":Math.round(s.fmin)+"–"+Math.round(s.fmax)+" MHz, "}${s.mtime.replace("T"," ")})</option>`).join("");
+  const a=$("sel_a").value,b=$("sel_b").value;
+  $("sel_a").innerHTML=opt;$("sel_b").innerHTML='<option value="">（無）</option>'+opt;
+  if(a)$("sel_a").value=a;else if(L.length){const w=L.slice().sort(bestSweep)[0];$("sel_a").value=w.name}
+  if(b)$("sel_b").value=b;
+  if(!scanInit){scanInit=true;$("sel_a").onchange=$("sel_b").onchange=()=>loadScan();$("sw_rel").onchange=()=>drawScan()}
+  loadScan();
+}
+async function loadScan(){
+  const a=$("sel_a").value;if(!a)return;const N=Math.max(800,Math.round($("sw").clientWidth));
+  sc.data=await api(`/api/sweep?name=${encodeURIComponent(a)}&lo=${sc.lo}&hi=${sc.hi}&points=${N}`);
+  const b=$("sel_b").value;sc.diff=null;
+  if(b)sc.diff=await api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&lo=${sc.lo}&hi=${sc.hi}&points=${N}`);
+  $("swd").classList.toggle("hidden",!b);$("v_range").textContent=`${sc.lo.toFixed(1)} – ${sc.hi.toFixed(1)} MHz`;drawScan();
+}
+const scanRel=()=>$("sw_rel").checked;
+function relView(D){ // D with optional rel: subtract the local noise floor
+  if(!scanRel()||!D.floor)return {mean:D.mean,max:D.max};
+  return {mean:D.mean.map((v,i)=>v-D.floor[i]),max:D.max.map((v,i)=>v-D.floor[i])}}
+function drawScan(){
+  const c=$("sw"),d=sizeCanvas(c),ctx=c.getContext("2d"),W=c.width,H=c.height,m={l:50*d,r:12*d,t:20*d,b:24*d};
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);const D=sc.data;if(!D||!D.f.length)return;
+  const V=relView(D);
+  let lo=Math.min(...V.mean),hi=Math.max(...V.max);lo=Math.floor((lo-3)/10)*10;hi=Math.ceil((hi+3)/10)*10;
+  const xs=f=>m.l+(f-sc.lo)/(sc.hi-sc.lo)*(W-m.l-m.r),ys=v=>m.t+(1-(v-lo)/(hi-lo))*(H-m.t-m.b);
+  ctx.font=`${11*d}px sans-serif`;
+  BANDS.forEach(b=>{if(b[2]<sc.lo||b[1]>sc.hi)return;const x0=xs(Math.max(b[1],sc.lo)),x1=xs(Math.min(b[2],sc.hi));ctx.fillStyle="#4cc2ff14";ctx.fillRect(x0,m.t,Math.max(2*d,x1-x0),H-m.t-m.b);
+    if(x1-x0>40*d){ctx.fillStyle="#7fb7d6";ctx.fillText(b[0],x0+3*d,m.t+12*d)}});
+  ctx.strokeStyle=COL.grid;ctx.fillStyle=COL.mute;
+  for(let v=lo;v<=hi;v+=10){const y=ys(v);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(W-m.r,y);ctx.stroke();ctx.fillText(v,6*d,y+4*d)}
+  const step=niceStep((sc.hi-sc.lo)/10);for(let f=Math.ceil(sc.lo/step)*step;f<=sc.hi;f+=step){const x=xs(f);ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,H-m.b);ctx.stroke();ctx.fillText(f,x-12*d,H-7*d)}
+  const ln=(arr,col,w)=>{ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w*d;arr.forEach((v,i)=>{const x=xs(D.f[i]),y=ys(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()};
+  ln(V.max,"#ffb45499",1);ln(V.mean,"#4cc2ff",1.3);
+  ctx.fillStyle=COL.mute;ctx.fillText(scanRel()?"dB（高於局部底噪）":"dBFS（相對值）",m.l+4*d,m.t+12*d);
+  ctx.fillStyle="#4cc2ff";ctx.fillText("— 平均",W-m.r-120*d,m.t+12*d);ctx.fillStyle="#ffb454";ctx.fillText("— 最大",W-m.r-60*d,m.t+12*d);
+  $("sw")._m=m;
+  const c2=$("swd");if(sc.diff&&sc.diff.f.length&&!c2.classList.contains("hidden")){
+    const d2=sizeCanvas(c2),x2=c2.getContext("2d"),W2=c2.width,H2=c2.height,m2={l:50*d2,r:12*d2,t:8*d2,b:14*d2};x2.fillStyle="#05080c";x2.fillRect(0,0,W2,H2);
+    const mx=Math.max(6,...sc.diff.diff.map(Math.abs)),y2=v=>m2.t+(1-(v+mx)/(2*mx))*(H2-m2.t-m2.b),xx=f=>m2.l+(f-sc.lo)/(sc.hi-sc.lo)*(W2-m2.l-m2.r);
+    x2.strokeStyle=COL.grid;x2.beginPath();x2.moveTo(m2.l,y2(0));x2.lineTo(W2-m2.r,y2(0));x2.stroke();x2.fillStyle=COL.mute;x2.font=`${10*d2}px sans-serif`;
+    x2.fillText("+"+mx.toFixed(0)+" dB",6*d2,m2.t+8*d2);x2.fillText("−"+mx.toFixed(0),6*d2,H2-m2.b);x2.fillText("差值（掃描檔 − 比較對象）",m2.l+6*d2,m2.t+8*d2);
+    x2.beginPath();x2.strokeStyle="#5fd68a";x2.lineWidth=1.2*d2;sc.diff.diff.forEach((v,i)=>{const x=xx(sc.diff.f[i]),y=y2(v);i?x2.lineTo(x,y):x2.moveTo(x,y)});x2.stroke()}
+}
+const swc=$("sw");
+swc.onwheel=e=>{e.preventDefault();const m=swc._m;if(!m)return;const d=devicePixelRatio||1,r=swc.getBoundingClientRect();
+  const fr=((e.clientX-r.left)*d-m.l)/(swc.width-m.l-m.r),fc=sc.lo+fr*(sc.hi-sc.lo),k=e.deltaY>0?1.3:1/1.3;
+  let lo=fc-(fc-sc.lo)*k,hi=fc+(sc.hi-fc)*k;lo=Math.max(sc.full[0],lo);hi=Math.min(sc.full[1],hi);if(hi-lo<2)return;sc.lo=lo;sc.hi=hi;loadScan()};
+swc.onmousedown=e=>{drag={x:e.clientX,lo:sc.lo,hi:sc.hi}};
+addEventListener("mouseup",()=>{if(drag){drag=null;loadScan()}});
+swc.onmousemove=e=>{const m=swc._m;if(!m)return;const d=devicePixelRatio||1,r=swc.getBoundingClientRect();
+  const fr=((e.clientX-r.left)*d-m.l)/(swc.width-m.l-m.r);if(fr<0||fr>1)return;
+  if(drag){const span=drag.hi-drag.lo,df=-(e.clientX-drag.x)*d/(swc.width-m.l-m.r)*span;let lo=drag.lo+df,hi=drag.hi+df;
+    if(lo<sc.full[0]){hi+=sc.full[0]-lo;lo=sc.full[0]}if(hi>sc.full[1]){lo-=hi-sc.full[1];hi=sc.full[1]}sc.lo=lo;sc.hi=hi;$("v_range").textContent=`${lo.toFixed(1)} – ${hi.toFixed(1)} MHz`;return}
+  const f=sc.lo+fr*(sc.hi-sc.lo);let txt=f.toFixed(2)+" MHz";const D=sc.data;
+  if(D&&D.f.length){let i=0,b=1e9;for(let j=0;j<D.f.length;j++){const q=Math.abs(D.f[j]-f);if(q<b){b=q;i=j}}const V=relView(D);txt+=scanRel()?`  平均 +${V.mean[i].toFixed(1)} / 最大 +${V.max[i].toFixed(1)} dB（底噪 ${D.floor[i]} dBFS）`:`  平均 ${D.mean[i]} / 最大 ${D.max[i]} dBFS`}
+  $("v_cur").textContent=f.toFixed(2)+" MHz";const tip=$("tip");tip.style.display="block";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";tip.textContent=txt};
+swc.onmouseleave=()=>{$("tip").style.display="none"};
+$("btnReset").onclick=()=>{sc.lo=sc.full[0];sc.hi=sc.full[1];loadScan()};
+$("btnReload").onclick=initScan;
+$("btnDelete").onclick=async()=>{
+  const name=$("sel_a").value;if(!name){return}
+  if(!confirm(`要刪除「${name}」嗎？\n檔案（含同名 PNG）會移到 sweep/.trash 資料夾，之後仍可手動救回。`))return;
+  const r=await api("/api/sweep/delete",{name});
+  $("delmsg").textContent=r.ok?`已移到垃圾桶：${r.moved.join("、")}`:`刪除失敗：${r.error||"未知錯誤"}`;
+  $("sel_a").value="";sc.data=null;sc.diff=null;await initScan()};
+$("btnSweep").onclick=async()=>{
+  const fast=$("s_mode").value==="fast";
+  if(!confirm(fast?"快速掃描會暫停即時接收，70–6000 MHz 約 3 分半。確定開始？":"完整掃描會暫停即時接收，70–6000 MHz 約 15 分鐘。確定開始？"))return;
+  const r=await api("/api/sweep/start",{start:+$("s_start").value,stop:+$("s_stop").value,gain:+$("s_gain").value,fast});
+  if(!r.ok)alert(r.msg);applyStatus(await api("/api/status"),false)};
+
+// ---------- events ----------
+async function loadEvents(){
+  const E=await api("/api/events");$("evnone").classList.toggle("hidden",E.length>0);
+  $("evbody").innerHTML=E.map(e=>`<tr><td>${e.time.replace("T"," ")}</td><td>${e.duration_s}</td><td>${e.watch_mhz} ± ${(e.bw_mhz/2).toFixed(2)}</td><td>${e.peak_db}</td><td>${e.baseline_db}</td><td>${e.peak_freq_mhz}</td></tr>`).join("");
+}
+setInterval(()=>{if(!$("tab-events").classList.contains("hidden"))loadEvents()},3000);
+
+// ================= zone hopping =================
+const HOP_PRESETS={
+"無人機常用":"ISM 433, 433.92\nISM 868, 868\nISM 915, 915\nGNSS L1/E1/B1/G1, 1559-1610\n2.4G WiFi, 2400-2483.5\n5.8G 圖傳, 5725-5875",
+"2.4G + 5.2G + 5.8G":"2.4G WiFi, 2400-2483.5\n5.2G WiFi, 5150-5250\n5.8G WiFi/圖傳, 5725-5875",
+"ISM 低頻":"ISM 433, 433.92\nISM 868, 868\nISM 915, 915",
+"GNSS 全星系":"GNSS L5/E5/B2, 1164-1215\nGNSS L2/G2, 1215-1260\nGNSS E6/B3/L6, 1260-1300\nGNSS L1/E1/B1/G1, 1555-1610\nNavIC S, 2483.5-2500",
+"FM 廣播":"FM 廣播, 87.5-108",
+"全頻段 70-6000 MHz（慢，約 3 秒一圈）":"全頻段, 70-6000",
+"BluSDR-90 1.98-2.70G":"BluSDR-90 1.98-2.70G, 1980-2700",
+"Skydio X10 控制器 無線電干擾（NTO）":"# Skydio NTO SOSB-24-V：這些頻段的手持/警用無線電在控制器左側約 30 公分內發射，會造成暫時斷訊\n# 403-470 與 450-512 重疊，合併為 403-512；3-70 MHz 超出 BladeRF 範圍（70 MHz 起）\nVHF 136-174, 136-174\nUHF 403-512 (含 403-470、450-512), 403-512\n700 MHz 公共安全 763-776, 763-776\n800 MHz 851-870, 851-870\n# 另：≤512 MHz 高功率發射可能永久損壞控制器；需要看 70-512 全段時拿掉下一行的 #\n# 70-512 MHz 全段, 70-512",
+"Skydio X10D":"Skydio M2 1.8G, 1788-1842\nSkydio M5 2.0G, 2050-2102\nSkydio M3 2.2G, 2208-2292\nSkydio M4 2.3G, 2308-2382\nSkydio M6 2.4G, 2410-2470",
+"中華電信 4G+5G":"# 以各頻段「整段下行」涵蓋，會同時看到其他業者；中華電信確切區塊未查到\n# 4G 700 MHz 未確認中華電信是否持有；需要時請拿掉下一行的 #\n# LTE 700 下行, 758-803\nLTE 900 (B8) 下行, 925-960\nLTE 1800 (B3) 下行, 1805-1880\n4G/5G 2100 (B1/n1) 下行, 2110-2170\nLTE 2600 (B7) 下行, 2620-2690\n5G 3.5G (n78) 中華電信, 3420-3510",
+"遠傳 4G+5G":"# 以各頻段「整段下行」涵蓋，會同時看到其他業者；遠傳確切區塊未查到。報導指出遠傳已併亞太電信\n# 遠傳是否持有 900 MHz 未確認；需要時請拿掉下一行的 #\n# LTE 900 (B8) 下行, 925-960\nLTE 700 (B28) 下行, 758-803\nLTE 1800 (B3) 下行, 1805-1880\n4G/5G 2100 (B1/n1) 下行, 2110-2170\n2600 TDD (B38), 2570-2620\n5G 3.5G (n78) 遠傳, 3340-3420",
+"台灣大哥大 4G+5G":"# 以各頻段「整段下行」涵蓋，會同時看到其他業者；台灣大確切區塊未查到。報導指出台灣大已併台灣之星\nLTE 700 (B28) 下行, 758-803\nLTE 900 (B8) 下行, 925-960\nLTE 1800 (B3) 下行, 1805-1880\n4G/5G 2100 (B1/n1) 下行, 2110-2170\nLTE 2600 (B7) 下行, 2620-2690\n5G 3.5G (n78) 原台灣之星, 3300-3340\n5G 3.5G (n78) 台灣大, 3510-3570"};
+const hop={zones:[],es:null,run:false,formInit:false,dirty:false,lastDraw:0,calibrated:false,tops:[],topT:0,wf:null,cursor:null,layout:null,runStart:0};
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const HOP_PRESET_OPTS={"全頻段 70-6000 MHz（慢，約 3 秒一圈）":{rate:"56",crop:15}};   // presets that also need specific rate/crop
+const hopMaxZ=()=>(st&&st.limits&&st.limits.zones)||24;   // the server announces its own limit
+const hopRng=()=>({lo:+$("hop_ymin").value,hi:+$("hop_ymax").value,wlo:+$("hop_wmin").value,whi:+$("hop_wmax").value});
+const hopAlpha=()=>+$("hop_smooth").value;
+const hopView=()=>$("hop_view").value;
+const hopRel=()=>$("hop_rel").checked;
+const hopOff=z=>hopRel()?z.floor:0;   // per-zone offset: in relative mode every zone is drawn as dB above its own floor
+function hopUsableMHz(){return(+$("hop_rate").value)*(1-2*(+$("hop_crop").value)/100)}
+function parseZones(text){
+  const out=[],errs=[],w=hopUsableMHz();
+  text.split("\n").forEach((line,ln)=>{line=line.trim();if(!line||line[0]==="#")return;const k=line.indexOf(",");
+    if(k<1){errs.push(`第 ${ln+1} 行缺少逗號`);return}
+    const name=line.slice(0,k).trim(),spec=line.slice(k+1).trim(),m=spec.match(/^([\d.]+)\s*-\s*([\d.]+)$/);
+    const ok=v=>isFinite(v)&&v>=70&&v<=6000;
+    if(m){const a=+m[1],b=+m[2];if(!ok(a)||!ok(b)||b<=a){errs.push(`第 ${ln+1} 行範圍需在 70–6000 MHz 且起<迄`);return}
+      const n=Math.ceil((b-a)/w),step=(b-a)/n;for(let i=0;i<n;i++)out.push({name:n>1?`${name} ${i+1}/${n}`:name,freq:(a+step*(i+.5))*1e6})}
+    else{const f=+spec;if(!ok(f)){errs.push(`第 ${ln+1} 行頻率需在 70–6000 MHz`);return}out.push({name,freq:f*1e6})}});
+  return{zones:out,errs}}
+function hopInfo(){
+  const{zones,errs}=parseZones($("hop_zones").value);const per=16+3+(+$("hop_dwell").value);
+  $("hop_zinfo").innerHTML=errs.length?`<span style="color:var(--bad)">${esc(errs.join("；"))}</span>`:
+    `${zones.length} 個頻區，每區約 ${hopUsableMHz().toFixed(0)} MHz，涵蓋約 ${(zones.length*hopUsableMHz()).toFixed(0)} MHz；預估一圈約 ${Math.round(zones.length*per)} ms（${(1000/(zones.length*per)).toFixed(1)} 次/秒）`+(zones.length>hopMaxZ()?`<br><span style="color:var(--bad)">最多 ${hopMaxZ()} 區，請縮小範圍、提高取樣率或減少頻段</span>`:"")}
+function hopFormInit(h){
+  if(hop.formInit)return;hop.formInit=true;
+  $("hop_preset").innerHTML='<option value="">自訂</option>'+Object.keys(HOP_PRESETS).map(k=>`<option>${k}</option>`).join("");
+  let txt=null,view=null,sm=null;try{txt=localStorage.getItem("hop_text");view=localStorage.getItem("hop_view");sm=localStorage.getItem("hop_smooth")}catch(e){}
+  const c=h&&h.cfg||{};
+  if(!txt)txt=(c.zones&&c.zones.length)?c.zones.map(z=>`${z.name}, ${(z.freq/1e6).toFixed(3)}`).join("\n"):HOP_PRESETS["無人機常用"];
+  $("hop_zones").value=txt;if(view)$("hop_view").value=view;if(sm)$("hop_smooth").value=sm;
+  if(c.rate)$("hop_rate").value=String(Math.round(c.rate/1e6));if(c.gain!=null)$("hop_gain").value=c.gain;
+  if(c.dwell_ms)$("hop_dwell").value=String(c.dwell_ms);if(c.crop)$("hop_crop").value=Math.round(c.crop*100);
+  if(c.trig_db)$("hop_trig").value=c.trig_db;if(c.log_events!=null)$("hop_log").checked=c.log_events;if(c.calib!=null)$("hop_calib").checked=c.calib;
+  $("hop_preset").onchange=()=>{const v=$("hop_preset").value;if(v){$("hop_zones").value=HOP_PRESETS[v];const o=HOP_PRESET_OPTS[v];if(o){$("hop_rate").value=o.rate;$("hop_crop").value=o.crop;if(st)hopCalInfo(st.hop||{})}hopInfo();try{localStorage.setItem("hop_text",$("hop_zones").value)}catch(e){}}};
+  ["hop_zones","hop_rate","hop_dwell","hop_crop"].forEach(i=>$(i).oninput=()=>{hopInfo();try{localStorage.setItem("hop_text",$("hop_zones").value)}catch(e){}});
+  $("hop_view").onchange=()=>{try{localStorage.setItem("hop_view",hopView())}catch(e){}hopApplyView();hop.dirty=true};
+  $("hop_smooth").onchange=()=>{try{localStorage.setItem("hop_smooth",$("hop_smooth").value)}catch(e){}};
+  ["hop_ymin","hop_ymax","hop_wmin","hop_wmax"].forEach(i=>$(i).onchange=()=>{hop.dirty=true});
+  $("hop_cal").onclick=()=>{hopCalibrate();hop.dirty=true};
+  try{$("hop_rel").checked=localStorage.getItem("hop_rel")==="1"}catch(e){}
+  $("hop_rel").onchange=()=>{try{localStorage.setItem("hop_rel",hopRel()?"1":"0")}catch(e){}hopCalibrate();hop.dirty=true};
+  hopApplyView();hopInfo()}
+function hopApplyView(){const comb=hopView()==="comb";$("hop_comb").classList.toggle("hidden",!comb);$("hop_grid").classList.toggle("hidden",comb)}
+
+// ---- zone state ----
+function hopBuild(zones){
+  const g=$("hop_grid");g.innerHTML="";hop.layout=null;hop.wf=null;hop.tops=[];hop.calibrated=false;hop.runStart=performance.now();
+  hop.zones=zones.map((z,i)=>{const card=document.createElement("div");card.className="zone";
+    card.innerHTML=`<div class="zh"><b>${esc(z.name)}</b><span class="zf">${(z.freq/1e6).toFixed(2)} MHz</span><span class="za">—</span></div><canvas class="zs"></canvas><canvas class="zw"></canvas><div class="zi">等待資料…</div>`;
+    g.appendChild(card);
+    return{i,z,card,cs:card.querySelector(".zs"),cw:card.querySelector(".zw"),za:card.querySelector(".za"),zi:card.querySelector(".zi"),
+      sm:null,pk:null,f0:0,df:0,n:0,floor:null,max:null,bp:null,t:0,base:null,alertUntil:0,wfc:document.createElement("canvas"),wfn:0}})}
+function hopOpen(){if(hop.es)return;hop.es=new EventSource("/api/hopstream");hop.es.onmessage=e=>hopFrame(JSON.parse(e.data))}
+function hopClose(){if(hop.es){hop.es.close();hop.es=null}}
+function hopFrame(f){
+  const z=hop.zones[f.z];if(!z)return;const n=f.p.length,a=hopAlpha();
+  if(!z.sm||z.sm.length!==n){z.sm=f.p.slice();z.pk=f.pk.slice();hop.layout=null}
+  const dt=z.t?Math.min(2,Math.max(0,f.t-z.t)):0.2,dec=3*dt;
+  for(let i=0;i<n;i++){z.sm[i]+= (f.p[i]-z.sm[i])*a;z.pk[i]=Math.max(z.pk[i]-dec,f.pk[i])}
+  z.f0=f.f0;z.df=f.df;z.n=n;z.floor=z.floor==null?f.floor:z.floor+(f.floor-z.floor)*a;z.max=f.max;z.bp=f.bp;z.t=f.t;
+  const thr=+$("hop_trig").value;if(z.base==null)z.base=f.bp;
+  if(f.bp>z.base+thr)z.alertUntil=performance.now()+3000;else z.base=0.98*z.base+0.02*f.bp;
+  hop.dirty=true}
+function hopCalibrate(){
+  const live=hop.zones.filter(z=>z.sm);if(!live.length)return;
+  const mn=Math.min(...live.map(z=>z.floor-hopOff(z))),mx=Math.max(...live.map(z=>Math.max(...z.sm)-hopOff(z)));
+  const lo=Math.floor((mn-8)/5)*5,hi=Math.max(Math.ceil((mx+6)/5)*5,lo+35);
+  $("hop_ymin").value=lo;$("hop_ymax").value=hi;$("hop_wmin").value=Math.round(mn-4);$("hop_wmax").value=Math.round(mn+30);hop.calibrated=true}
+
+// ---- layout of the combined chart ----
+function hopLayout(W,d){
+  const n=hop.zones.filter(z=>z.sm).length;if(!n)return null;
+  const span=hop.zones.find(z=>z.sm).n*hop.zones.find(z=>z.sm).df;
+  const order=hop.zones.map((z,i)=>i).filter(i=>hop.zones[i].sm).sort((a,b)=>hop.zones[a].f0-hop.zones[b].f0);
+  const groups=[];
+  order.forEach(i=>{const z=hop.zones[i],g=groups[groups.length-1];
+    if(g&&z.f0-hop.zones[g.idx[g.idx.length-1]].f0<=span*1.02)g.idx.push(i);else groups.push({idx:[i]})});
+  const m={l:46*d,r:8*d,t:44*d,b:22*d},gap=16*d,avail=W-m.l-m.r-gap*(groups.length-1),sw=avail/order.length;
+  let x=m.l;const slot={};
+  groups.forEach(g=>{g.x0=x;g.idx.forEach(i=>{slot[i]={x0:x,x1:x+sw};x+=sw});g.x1=x;x+=gap;
+    const a=hop.zones[g.idx[0]],b=hop.zones[g.idx[g.idx.length-1]];g.f0=a.f0/1e6;g.f1=(b.f0+(b.n-1)*b.df)/1e6;
+    g.label=a.z.name.replace(/\s+\d+\/\d+$/,"")});
+  return{order,groups,slot,m,sw,gap,W}}
+function hopTickStep(span,px){const raw=span/Math.max(1,px/70);return niceStep(raw)}
+
+function drawComb(){
+  const c=$("hc_spec");if(c.offsetParent===null)return;const d=sizeCanvas(c),ctx=c.getContext("2d"),W=c.width,H=c.height;
+  if(!hop.layout||hop.layout.W!==W)hop.layout=hopLayout(W,d);
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);const L=hop.layout;if(!L){ctx.fillStyle=COL.mute;ctx.font=`${13*d}px sans-serif`;ctx.fillText("等待資料…",W/2-30*d,H/2);return}
+  const{m,groups,slot}=L,r=hopRng(),yOf=v=>m.t+(1-(Math.max(r.lo,Math.min(r.hi,v))-r.lo)/(r.hi-r.lo))*(H-m.t-m.b);
+  ctx.font=`${11*d}px sans-serif`;
+  // group backgrounds, headers, separators
+  groups.forEach((g,gi)=>{ctx.fillStyle=gi%2?"#ffb45410":"#4cc2ff10";ctx.fillRect(g.x0,m.t,g.x1-g.x0,H-m.t-m.b);
+    ctx.fillStyle="#cfd8e6";ctx.font=`bold ${11*d}px sans-serif`;
+    const lab=g.label,tw=ctx.measureText(lab).width,cx=(g.x0+g.x1)/2;ctx.save();ctx.beginPath();ctx.rect(g.x0,0,g.x1-g.x0,m.t);ctx.clip();
+    ctx.fillText(lab,Math.max(g.x0+3*d,cx-tw/2),15*d);ctx.font=`${10*d}px sans-serif`;ctx.fillStyle=COL.mute;
+    const rg=`${g.f0.toFixed(g.f1-g.f0<5?2:0)}–${g.f1.toFixed(g.f1-g.f0<5?2:0)} MHz`,rw=ctx.measureText(rg).width;ctx.fillText(rg,Math.max(g.x0+3*d,cx-rw/2),29*d);ctx.restore();
+    ctx.strokeStyle=gi%2?"#ffb45455":"#4cc2ff55";ctx.lineWidth=2*d;ctx.beginPath();ctx.moveTo(g.x0,m.t-3*d);ctx.lineTo(g.x1,m.t-3*d);ctx.stroke();
+    if(gi>0){ctx.setLineDash([3*d,4*d]);ctx.strokeStyle="#8793a5";ctx.lineWidth=d;[g.x0-L.gap/2].forEach(x=>{ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,H-m.b);ctx.stroke()});ctx.setLineDash([]);
+      ctx.fillStyle="#8793a5";ctx.font=`${10*d}px sans-serif`;ctx.fillText("∥",g.x0-L.gap/2-3*d,H-m.b-4*d)}});
+  // horizontal grid
+  ctx.lineWidth=d;ctx.strokeStyle=COL.grid;ctx.fillStyle=COL.mute;ctx.font=`${10*d}px sans-serif`;
+  const st=niceStep((r.hi-r.lo)/6);for(let v=Math.ceil(r.lo/st)*st;v<=r.hi;v+=st){const y=yOf(v);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(W-m.r,y);ctx.stroke();ctx.fillText(Math.round(v),6*d,y+3*d)}
+  // frequency ticks per group: narrow groups get one centred label, wide ones evenly spaced ticks
+  ctx.fillStyle=COL.mute;ctx.font=`${10*d}px sans-serif`;groups.forEach(g=>{const span=g.f1-g.f0,wpx=(g.x1-g.x0)/d;
+    if(wpx<110){const t=((g.f0+g.f1)/2).toFixed(span<5?2:1);ctx.fillText(t,(g.x0+g.x1)/2-ctx.measureText(t).width/2,H-7*d);return}
+    const stp=niceStep(span/Math.max(1,Math.floor(wpx/90)));
+    for(let f=Math.ceil(g.f0/stp)*stp;f<=g.f1;f+=stp){const x=g.x0+(f-g.f0)/span*(g.x1-g.x0),t=f.toFixed(stp<1?1:0);
+      if(x<g.x0+22*d||x>g.x1-22*d)continue;ctx.fillText(t,x-ctx.measureText(t).width/2,H-7*d)}
+    ctx.fillText(g.f0.toFixed(1),g.x0+2*d,H-7*d);const t1=g.f1.toFixed(1);ctx.fillText(t1,g.x1-ctx.measureText(t1).width-2*d,H-7*d)});
+  // traces
+  hop.zones.forEach((z,i)=>{if(!z.sm||!slot[i])return;const s=slot[i],n=z.sm.length,xa=k=>s.x0+k/(n-1)*(s.x1-s.x0);
+    const o=hopOff(z),yf=yOf(z.floor-o);ctx.setLineDash([5*d,4*d]);ctx.strokeStyle="#5fd68a66";ctx.beginPath();ctx.moveTo(s.x0,yf);ctx.lineTo(s.x1,yf);ctx.stroke();ctx.setLineDash([]);
+    ctx.beginPath();ctx.strokeStyle="#ffb454aa";ctx.lineWidth=d;z.pk.forEach((v,k)=>{const x=xa(k),y=yOf(v-o);k?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+    ctx.beginPath();z.sm.forEach((v,k)=>{const x=xa(k),y=yOf(v-o);k?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+    ctx.lineTo(xa(n-1),H-m.b);ctx.lineTo(xa(0),H-m.b);ctx.closePath();const gr=ctx.createLinearGradient(0,m.t,0,H-m.b);gr.addColorStop(0,"#4cc2ff55");gr.addColorStop(1,"#4cc2ff05");ctx.fillStyle=gr;ctx.fill();
+    ctx.beginPath();ctx.strokeStyle="#6fd0ff";ctx.lineWidth=1.4*d;z.sm.forEach((v,k)=>{const x=xa(k),y=yOf(v-o);k?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+    if(performance.now()<z.alertUntil){ctx.fillStyle="#ff6b6b";ctx.fillRect(s.x0,m.t-5*d,s.x1-s.x0,4*d)}});
+  // markers for the strongest signals (list refreshes every 2 s, so they stay put)
+  hop.tops.slice(0,5).forEach(t=>{const z=hop.zones[t.zi],s=slot[t.zi];if(!z||!z.sm||!s)return;const x=s.x0+t.k/(z.sm.length-1)*(s.x1-s.x0),y=yOf(z.sm[t.k]-hopOff(z));
+    ctx.fillStyle="#ffd36e";ctx.beginPath();ctx.moveTo(x,y-3*d);ctx.lineTo(x-4*d,y-10*d);ctx.lineTo(x+4*d,y-10*d);ctx.closePath();ctx.fill()});
+  if(hop.cursor){ctx.strokeStyle="#ffffff88";ctx.lineWidth=d;ctx.beginPath();ctx.moveTo(hop.cursor.x*d,m.t);ctx.lineTo(hop.cursor.x*d,H-m.b);ctx.stroke()}
+  drawCombWf()}
+function drawCombWf(){
+  const c=$("hc_wf"),L=hop.layout;if(c.offsetParent===null||!L)return;const d=sizeCanvas(c),ctx=c.getContext("2d");
+  ctx.fillStyle="#000";ctx.fillRect(0,0,c.width,c.height);ctx.imageSmoothingEnabled=false;
+  if(hop.wf)L.order.forEach(i=>{const z=hop.zones[i],s=L.slot[i];if(!z.sm)return;ctx.drawImage(hop.wf.c,hop.wf.off[i],0,hop.wf.wz,hop.wf.h,s.x0,0,s.x1-s.x0,c.height)});
+  ctx.fillStyle="#cfd8e6";ctx.font=`${10*d}px sans-serif`;ctx.fillText("現在",6*d,12*d);
+  // time scale on the left: one tick and label every 60 s (m:ss ago)
+  const ph=c.height/HOP_WF_ROWS;ctx.strokeStyle="#ffffff55";ctx.lineWidth=d;ctx.fillStyle="#cfd8e6";
+  for(let s=60;s<=HOP_WF_ROWS*HOP_WF_DT;s+=60){const y=s/HOP_WF_DT*ph;ctx.beginPath();ctx.moveTo(L.m.l-6*d,y);ctx.lineTo(L.m.l,y);ctx.stroke();
+    ctx.setLineDash([2*d,5*d]);ctx.beginPath();ctx.moveTo(L.m.l,y);ctx.lineTo(c.width-L.m.r,y);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillText(`-${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`,6*d,y+(s>=HOP_WF_ROWS*HOP_WF_DT?-2:4)*d)}}
+const HOP_WF_ROWS=900,HOP_WF_DT=1;   // 900 rows x 1 s = 15 minutes of history (1 s/row keeps the canvas shift cheap)
+function hopWfRow(){   // one composite waterfall row every 250 ms, independent of the hop timing
+  const L=hop.layout;if(!L||!hop.run)return;const live=hop.zones.filter(z=>z.sm);if(!live.length)return;
+  const nw=performance.now();if(hop.wfT&&nw-hop.wfT<HOP_WF_DT*1000-30)return;hop.wfT=nw;
+  // canvases are capped (~16k px wide in Safari), so with many zones each one gets fewer columns (max of each bin keeps peaks)
+  const wz=Math.max(2,Math.min(512,Math.floor(8000/live.length))),key=hop.zones.map(z=>z.sm?z.n:0).join()+"|"+wz,total=live.length*wz;
+  if(!hop.wf||hop.wf.key!==key){const c=document.createElement("canvas");c.width=total;c.height=HOP_WF_ROWS;const off={};let o=0;hop.zones.forEach((z,i)=>{off[i]=o;o+=z.sm?wz:0});hop.wf={c,w:total,h:HOP_WF_ROWS,off,wz,key,rows:[]}}
+  const ctx=hop.wf.c.getContext("2d"),r=hopRng();ctx.drawImage(hop.wf.c,0,1);const img=ctx.createImageData(total,1),vals=new Float32Array(total).fill(NaN);
+  hop.zones.forEach((z,i)=>{if(!z.sm)return;const o=hop.wf.off[i],zo=hopOff(z);for(let k=0;k<wz;k++){
+    const k0=Math.floor(k*z.n/wz),k1=Math.max(k0+1,Math.floor((k+1)*z.n/wz));let v=-1e9;for(let j=k0;j<k1&&j<z.n;j++)if(z.sm[j]>v)v=z.sm[j];
+    vals[o+k]=v-zo;const t=(v-zo-r.wlo)/(r.whi-r.wlo),col=LUT[Math.max(0,Math.min(255,Math.round(t*255)))],p=(o+k)*4;img.data[p]=col[0];img.data[p+1]=col[1];img.data[p+2]=col[2];img.data[p+3]=255}});
+  ctx.putImageData(img,0,0);hop.wf.rows.unshift({vals,rel:hopRel()});if(hop.wf.rows.length>HOP_WF_ROWS)hop.wf.rows.pop()}
+
+// ---- cards view ----
+function hopCardWf(z){
+  if(z.wfn!==z.n){z.wfc.width=z.n;z.wfc.height=56;z.wfn=z.n;z.wfc.getContext("2d").clearRect(0,0,z.n,56)}
+  const r=hopRng(),c=z.wfc.getContext("2d");c.drawImage(z.wfc,0,1);const img=c.createImageData(z.n,1);
+  for(let i=0;i<z.n;i++){const t=(z.sm[i]-hopOff(z)-r.wlo)/(r.whi-r.wlo),col=LUT[Math.max(0,Math.min(255,Math.round(t*255)))];img.data[i*4]=col[0];img.data[i*4+1]=col[1];img.data[i*4+2]=col[2];img.data[i*4+3]=255}
+  c.putImageData(img,0,0)}
+function drawCard(z){
+  if(!z.sm)return;const d=sizeCanvas(z.cs),ctx=z.cs.getContext("2d"),W=z.cs.width,H=z.cs.height,m={l:34*d,r:6*d,t:6*d,b:16*d},n=z.sm.length,r=hopRng();
+  const yOf=v=>m.t+(1-(Math.max(r.lo,Math.min(r.hi,v))-r.lo)/(r.hi-r.lo))*(H-m.t-m.b),xAt=i=>m.l+i/(n-1)*(W-m.l-m.r);
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);ctx.font=`${10*d}px sans-serif`;ctx.strokeStyle=COL.grid;ctx.fillStyle=COL.mute;ctx.lineWidth=d;
+  const st=niceStep((r.hi-r.lo)/4);for(let v=Math.ceil(r.lo/st)*st;v<=r.hi;v+=st){const y=yOf(v);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(W-m.r,y);ctx.stroke();ctx.fillText(Math.round(v),3*d,y+3*d)}
+  const fa=z.f0/1e6,fb=(z.f0+(n-1)*z.df)/1e6;[[fa,m.l],[(fa+fb)/2,(m.l+W-m.r)/2-14*d],[fb,W-m.r-34*d]].forEach(([f,x])=>ctx.fillText(f.toFixed(1),x,H-3*d));
+  const o=hopOff(z),yf=yOf(z.floor-o);ctx.setLineDash([5*d,4*d]);ctx.strokeStyle="#5fd68a77";ctx.beginPath();ctx.moveTo(m.l,yf);ctx.lineTo(W-m.r,yf);ctx.stroke();ctx.setLineDash([]);
+  ctx.beginPath();ctx.strokeStyle="#ffb454aa";z.pk.forEach((v,i)=>{const x=xAt(i),y=yOf(v-o);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+  const g=ctx.createLinearGradient(0,m.t,0,H-m.b);g.addColorStop(0,"#4cc2ff66");g.addColorStop(1,"#4cc2ff05");
+  ctx.beginPath();z.sm.forEach((v,i)=>{const x=xAt(i),y=yOf(v-o);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.lineTo(xAt(n-1),H-m.b);ctx.lineTo(xAt(0),H-m.b);ctx.closePath();ctx.fillStyle=g;ctx.fill();
+  ctx.beginPath();ctx.strokeStyle="#6fd0ff";ctx.lineWidth=1.4*d;z.sm.forEach((v,i)=>{const x=xAt(i),y=yOf(v-o);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+  const d2=sizeCanvas(z.cw),c2=z.cw.getContext("2d");c2.fillStyle="#000";c2.fillRect(0,0,z.cw.width,z.cw.height);c2.imageSmoothingEnabled=false;
+  c2.drawImage(z.wfc,m.l*d2/d,0,z.cw.width-(m.l+m.r)*d2/d,z.cw.height)}
+
+// ---- rendering loop (fixed ~8 fps, no matter how often frames arrive) ----
+function hopLoop(ts){
+  if(hop.dirty&&ts-hop.lastDraw>120){hop.dirty=false;hop.lastDraw=ts;
+    if(hopView()==="comb")drawComb();else hop.zones.forEach(z=>{if(z.sm)drawCard(z)})}
+  requestAnimationFrame(hopLoop)}
+requestAnimationFrame(hopLoop);
+
+// ---- slow, stable updates ----
+function hopPeaks(){
+  const out=[];hop.zones.forEach(z=>{if(!z.sm)return;const n=z.sm.length,e=Math.max(2,Math.round(n*0.05)),c=[];
+    for(let i=e;i<n-e;i++){const v=z.sm[i];if(v>=z.floor+10&&v>=z.sm[i-1]&&v>=z.sm[i+1]&&v>=z.sm[i-2]&&v>=z.sm[i+2])c.push(i)}
+    c.sort((a,b)=>z.sm[b]-z.sm[a]);const pick=[];for(const i of c){if(pick.length>=2)break;if(pick.every(j=>Math.abs(j-i)>n/20))pick.push(i)}
+    pick.forEach(k=>out.push({zi:z.i,k,zone:z.z.name,f:(z.f0+k*z.df)/1e6,lv:z.sm[k],above:z.sm[k]-z.floor}))});
+  return out.sort((a,b)=>b.above-a.above).slice(0,8)}
+function hopTopRender(){
+  const rows=hop.tops.map(p=>`<tr><td>${esc(p.zone)}</td><td><b>${p.f.toFixed(2)}</b> MHz</td><td>${p.lv.toFixed(0)} dBFS</td><td class="dim">+${p.above.toFixed(0)} dB</td></tr>`);
+  while(rows.length<8)rows.push(rows.length===0&&!hop.zones.some(z=>z.sm)?'<tr><td class="dim" colspan="4">尚未開始</td></tr>':(rows.length===0?'<tr><td class="dim" colspan="4">各頻區目前都沒有明顯高於底噪的訊號</td></tr>':'<tr><td colspan="4">&nbsp;</td></tr>'));
+  $("h_top").innerHTML=rows.join("")}
+function hopTick(){   // every 500 ms
+  const now=performance.now(),tnow=Date.now()/1000;
+  if(hop.run&&!hop.calibrated&&hop.zones.length&&(hop.zones.every(z=>z.sm)||now-hop.runStart>6000)){hopCalibrate();hop.dirty=true}
+  hop.zones.forEach(z=>{z.card.classList.toggle("alert",now<z.alertUntil);
+    if(z.t){const age=(tnow-z.t);z.za.textContent=age>2?"無資料":age<1?"<1 秒前":`${Math.round(age)} 秒前`;z.card.classList.toggle("stale",age>3);
+      z.zi.textContent=`底噪 ${z.floor.toFixed(0)}　最大 ${z.max.toFixed(0)} dBFS　峰值保持 ${Math.max(...z.pk).toFixed(0)}`}});
+  if(now-hop.topT>2000){hop.topT=now;hop.tops=hopPeaks();hopTopRender();hop.dirty=true}}
+setInterval(hopTick,500);setInterval(()=>{hopWfRow();hop.zones.forEach(z=>{if(z.sm&&hop.run)hopCardWf(z)});hop.dirty=true},250);
+
+window.hopStatus=function(s){
+  const h=s.hop||{};hopFormInit(h);
+  const running=!!h.running;
+  if(running&&!hop.run){const zs=(h.cfg&&h.cfg.zones)||[];if(hop.zones.length!==zs.length||!hop.zones.length)hopBuild(zs);hopOpen()}
+  if(!running&&hop.run)hopClose();
+  hop.run=running;
+  $("btnHop").textContent=running?"停止分區監控":"開始分區監控";$("btnHop").className="act"+(running?" stop":"");$("btnHop").disabled=s.mode==="sweep";
+  const eb=$("hop_err");eb.classList.toggle("hidden",!h.error);eb.textContent=h.error||"";
+  hopCalInfo(h);
+  const he=h.hello,stt=h.stats;
+  if(he)$("h_cov").textContent=`${he.zones.length} 區／約 ${(he.zones.length*he.span_hz/1e6).toFixed(0)} MHz`;
+  if(stt&&he){$("h_cycle").textContent=`${stt.cycle_ms.toFixed(0)} ms（${(1000/stt.cycle_ms).toFixed(1)} 次/秒）`;
+    $("h_duty").textContent=`${(he.keep_ms/stt.cycle_ms*100).toFixed(1)}%（每次 ${he.keep_ms} ms）`;
+    $("h_hop").textContent=`${stt.retune_ms.toFixed(0)} ms／${stt.hop_ms.toFixed(0)} ms`;$("h_drop").textContent=stt.dropped}}
+function hopCalInfo(h){
+  const rate=Math.round(+$("hop_rate").value),c=(h.calibs||[]).find(x=>Math.round(x.rate/1e6)===rate);
+  let t=c?`已有 ${rate} MSPS 校正（${c.created.replace("T"," ")}），±14 MHz 處扣除約 ${c.edge["14"]} dBFS 的額外雜訊`:`尚無 ${rate} MSPS 的校正，請先建立`;
+  if(h.hello&&h.hello.calib)t+=`｜目前執行：${h.hello.calib}`;else if(h.running)t+="｜目前執行：未套用校正";
+  if(!hop.calBusy)$("hop_calinfo").textContent=t}
+$("hop_rate").addEventListener("change",()=>{if(st)hopCalInfo(st.hop||{})});
+$("hop_calbtn").onclick=async()=>{
+  if(!confirm("建立校正會暫停目前的接收／分區監控約 10 秒。保持天線連接即可，不需要終端負載；會在 3.7–4.9 GHz 的安靜頻段量測。確定？"))return;
+  hop.calBusy=true;$("hop_calbtn").disabled=true;$("hop_calinfo").textContent="校正中…（約 10 秒，請稍候）";
+  const r=await api("/api/hop/calibrate",{rate:+$("hop_rate").value*1e6,gain:+$("hop_gain").value});
+  hop.calBusy=false;$("hop_calbtn").disabled=false;hopClose();hop.run=false;
+  const s2=await api("/api/status");applyStatus(s2,false);
+  if(!r.ok){$("hop_calinfo").textContent="校正失敗："+(r.msg||"未知錯誤");return}
+  $("hop_calinfo").textContent=`校正完成（各參考頻率底噪 ${r.floors_dbfs.join("、")} dBFS）。請重新按「開始分區監控」套用`};
+$("btnHop").onclick=async()=>{
+  if(hop.run){await api("/api/hop/stop",{});hopClose();hop.run=false;applyStatus(await api("/api/status"),false);return}
+  const{zones,errs}=parseZones($("hop_zones").value);
+  if(errs.length||!zones.length){alert(errs.length?errs.join("\n"):"請至少設定一個頻區");return}
+  if(zones.length>hopMaxZ()){alert(`最多 ${hopMaxZ()} 個頻區（目前 ${zones.length} 個）`);return}
+  if(st&&st.mode==="live"&&!confirm("開始分區監控會暫停一般即時接收，確定？"))return;
+  const r=await api("/api/hop/start",{zones,rate:+$("hop_rate").value*1e6,gain:+$("hop_gain").value,dwell_ms:+$("hop_dwell").value,
+    crop:+$("hop_crop").value/100,trig_db:+$("hop_trig").value,log_events:$("hop_log").checked,calib:$("hop_calib").checked});
+  if(!r.ok){alert(r.msg);return}
+  hopBuild(zones);hopOpen();hop.run=true;applyStatus(await api("/api/status"),false)};
+$("hc_spec").onmousemove=e=>{const L=hop.layout;if(!L)return;const c=$("hc_spec"),d=devicePixelRatio||1,r=c.getBoundingClientRect(),x=(e.clientX-r.left);
+  hop.cursor={x};let hit=null;for(const i of L.order){const s=L.slot[i];if(x*d>=s.x0&&x*d<=s.x1){hit=i;break}}
+  const tip=$("tip");if(hit==null){tip.style.display="none";hop.dirty=true;return}
+  const z=hop.zones[hit],s=L.slot[hit],k=Math.max(0,Math.min(z.n-1,Math.round((x*d-s.x0)/(s.x1-s.x0)*(z.n-1))));
+  tip.style.display="block";tip.style.whiteSpace="pre";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";
+  tip.textContent=`${z.z.name}\n${((z.f0+k*z.df)/1e6).toFixed(3)} MHz\n${hopRel()?`平均 +${(z.sm[k]-z.floor).toFixed(1)}　峰值保持 +${(z.pk[k]-z.floor).toFixed(1)} dB（高於本區底噪）\n本區底噪 ${z.floor.toFixed(1)} dBFS`:`平均 ${z.sm[k].toFixed(1)}　峰值保持 ${z.pk[k].toFixed(1)} dBFS\n底噪 ${z.floor.toFixed(1)}`}`;hop.dirty=true};
+$("hc_wf").onmousemove=e=>{const L=hop.layout,W=hop.wf;if(!L||!W||!W.rows.length)return;const c=$("hc_wf"),d=devicePixelRatio||1,r=c.getBoundingClientRect(),x=e.clientX-r.left,tip=$("tip");
+  const row=Math.floor((e.clientY-r.top)/r.height*HOP_WF_ROWS);let hit=null;for(const i of L.order){const s=L.slot[i];if(x*d>=s.x0&&x*d<=s.x1){hit=i;break}}
+  if(hit==null||row<0||row>=W.rows.length){tip.style.display="none";return}
+  const z=hop.zones[hit],s=L.slot[hit],col=Math.max(0,Math.min(W.wz-1,Math.floor((x*d-s.x0)/(s.x1-s.x0)*W.wz))),v=W.rows[row].vals[W.off[hit]+col];
+  const f=(z.f0+(col+0.5)/W.wz*z.n*z.df)/1e6,ago=row*HOP_WF_DT;
+  tip.style.display="block";tip.style.whiteSpace="pre";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";
+  tip.textContent=`${z.z.name}\n${f.toFixed(3)} MHz\n${ago<1?"現在":`${Math.floor(ago/60)}:${String(Math.floor(ago%60)).padStart(2,"0")} 前`}\n${isNaN(v)?"（無資料）":W.rows[row].rel?`+${v.toFixed(1)} dB（高於本區底噪）`:`${v.toFixed(1)} dBFS`}`;$("hc_wfv").textContent=tip.textContent.replace(/\n/g,"　")};
+$("hc_wf").onmouseleave=()=>{$("tip").style.display="none";$("tip").style.whiteSpace=""};
+$("hc_spec").onmouseleave=()=>{hop.cursor=null;$("tip").style.display="none";$("tip").style.whiteSpace="";hop.dirty=true};
+addEventListener("resize",()=>{hop.layout=null;hop.dirty=true});
+
+(async()=>{const s=await api("/api/status");applyStatus(s,true);startStream();poll();initOverview()})();
+</script>
+<script>
+// ---------- replay: loads a recording in the browser and plays it back ----------
+const RP={ds:null,pos:0,row:0,playing:false,last:0,segs:[],rec:null,range:null,off:null,hv:null};
+const rpFmtT=s=>{s=Math.max(0,Math.round(s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`};
+async function rpOpen(){
+  let rows=[];try{rows=await api("/api/recs")}catch(e){return}
+  const sel=$("rp_sel"),old=sel.value;
+  sel.innerHTML=rows.filter(r=>!r.active).map(r=>`<option value="${esc(r.name)}">${r.kind==="live"?"即時":"分區"}　${esc(r.name)}　${recFmt(r.bytes)}</option>`).join("")||'<option value="">（沒有錄製檔）</option>';
+  if(old)sel.value=old}
+window.rpOpen=rpOpen;
+$("rp_refresh").onclick=rpOpen;
+$("rp_load").onclick=async()=>{
+  const name=$("rp_sel").value;if(!name)return;const msg=$("rp_msg");msg.textContent="載入中…";rpPause();
+  try{
+    const resp=await fetch("/api/rec/download?name="+encodeURIComponent(name));if(!resp.ok)throw new Error("下載失敗");
+    const text=await new Response(resp.body.pipeThrough(new DecompressionStream("gzip"))).text();
+    const recs=[];for(const l of text.split("\n")){if(l)try{recs.push(JSON.parse(l))}catch(e){}}
+    RP.rec={name,recs,kind:name.startsWith("live")?"live":"hop"};
+    RP.segs=RP.rec.kind==="live"?rpLiveSegs(recs):[null];
+    if(RP.rec.kind==="live"&&!RP.segs.length)throw new Error("這個檔案沒有資料");
+    $("rp_seg").innerHTML=RP.segs.map((g,i)=>g?`<option value="${i}">${((g.geom.f0)/1e6).toFixed(1)}–${((g.geom.f0+(g.geom.n-1)*g.geom.df)/1e6).toFixed(1)} MHz（${g.rows.length} 秒）</option>`:"").join("");
+    $("rp_segl").style.display=RP.segs.length>1?"":"none";$("rp_srcl").style.display=RP.rec.kind==="hop"?"":"none";
+    rpBuild(0)}catch(e){msg.textContent="載入失敗："+e.message}};
+function rpLiveSegs(recs){const segs=[];let cur=null;
+  for(const r of recs){if(r.type==="geom"){cur={geom:r,rows:[]};segs.push(cur)}else if(r.p&&cur)cur.rows.push(r)}
+  return segs.filter(g=>g.rows.length)}
+function rpBuild(si){
+  const R=RP.rec;let ds;
+  if(R.kind==="live"){const g=RP.segs[si],n=g.geom.n,N=g.rows.length,P=new Float32Array(N*n),F=new Float32Array(N),t=new Float64Array(N);
+    g.rows.forEach((r,i)=>{P.set(r.p,i*n);F[i]=r.floor;t[i]=r.t-g.rows[0].t});
+    const colF=new Float64Array(n),colZ=new Uint16Array(n);for(let i=0;i<n;i++)colF[i]=(g.geom.f0+i*g.geom.df)/1e6;
+    ds={N,C:n,Z:1,P,K:null,F,t,colF,colZ,zname:["即時"],df:g.geom.df/1e6,gapMHz:1e9}}
+  else{ds=rpBuildHop(R.recs)}
+  if(!ds){$("rp_msg").textContent="這個檔案沒有可用的頻區資料";return}
+  RP.ds=ds;RP.pos=0;RP.row=0;$("rp_seek").max=ds.N-1;$("rp_seek").value=0;$("rp_ctl").style.display="flex";
+  $("rp_msg").textContent=`${R.name}：${ds.N} 列，${ds.C} 點，總長 ${rpFmtT(ds.t[ds.N-1])}`;
+  rpRange();rpPaintWf();rpDraw()}
+$("rp_seg").onchange=()=>rpBuild(+$("rp_seg").value);
+function rpBuildHop(recs){
+  const fr=recs.filter(r=>r.z!=null&&r.p);if(!fr.length)return null;
+  const hello=recs.find(r=>r.type==="hello"),names=(hello&&hello.zones)||[],zi=new Map();
+  fr.forEach(f=>{if(!zi.has(f.z))zi.set(f.z,{z:f.z,f0:f.f0,df:f.df,n:f.p.length})});
+  const zs=[...zi.values()].sort((a,b)=>a.f0-b.f0),Z=zs.length;let C0=0;zs.forEach((z,k)=>{z.k=k;z.o=C0;C0+=z.n});
+  const byZ=new Map(zs.map(z=>[z.z,z]));
+  const cp=new Float32Array(C0).fill(NaN),ck=new Float32Array(C0).fill(NaN),cf=new Float32Array(Z).fill(NaN);
+  const t0=fr[0].t,t1=fr[fr.length-1].t,dt=Math.max(1,(t1-t0)/1200),seen=new Set();let T=t0,fi=0,start=null;
+  const rows=[];
+  // first grid time = when every zone has been seen once, so the first rows are not half empty
+  while(fi<fr.length&&T<=t1+dt){
+    while(fi<fr.length&&fr[fi].t<=T){const f=fr[fi++],z=byZ.get(f.z);cp.set(f.p,z.o);ck.set(f.pk,z.o);cf[z.k]=f.floor;seen.add(f.z)}
+    if(start===null&&seen.size===Z)start=T;
+    if(start!==null)rows.push({t:T-start,p:cp.slice(),k:ck.slice(),f:cf.slice()});
+    T+=dt}
+  if(!rows.length)rows.push({t:0,p:cp.slice(),k:ck.slice(),f:cf.slice()});
+  const N=rows.length,kb=Math.ceil(C0/4000),C=Math.ceil(C0/kb),P=new Float32Array(N*C),K=new Float32Array(N*C),F=new Float32Array(N*Z),t=new Float64Array(N);
+  const colF=new Float64Array(C),colZ=new Uint16Array(C);
+  zs.forEach(z=>{for(let i=0;i<z.n;i++){const j=Math.floor((z.o+i)/kb);colF[j]=(z.f0+i*z.df)/1e6;colZ[j]=z.k}});
+  rows.forEach((r,i)=>{t[i]=r.t;F.set(r.f,i*Z);
+    for(let j=0;j<C;j++){let mp=-1e9,mk=-1e9;for(let c=j*kb;c<Math.min(C0,(j+1)*kb);c++){if(r.p[c]>mp)mp=r.p[c];if(r.k[c]>mk)mk=r.k[c]}
+      P[i*C+j]=mp<-1e8?NaN:mp;K[i*C+j]=mk<-1e8?NaN:mk}});
+  const zname=zs.map(z=>names[z.z]||("頻區 "+z.z));
+  return{N,C,Z,P,K,F,t,colF,colZ,zname,df:zs[0].df/1e6*kb,gapMHz:zs[0].df/1e6*kb*3}}
+const rpRel=()=>$("rp_rel").checked,rpSrc=()=>$("rp_src").value==="k"&&RP.ds&&RP.ds.K?RP.ds.K:RP.ds.P;
+function rpVal(r,c){const ds=RP.ds;return rpSrc()[r*ds.C+c]-(rpRel()?ds.F[r*ds.Z+ds.colZ[c]]:0)}
+function rpRange(){
+  const ds=RP.ds,vs=[],rs=Math.max(1,Math.floor(ds.N/150)),cs=Math.max(1,Math.floor(ds.C/200));
+  for(let r=0;r<ds.N;r+=rs)for(let c=0;c<ds.C;c+=cs){const v=rpVal(r,c);if(isFinite(v))vs.push(v)}
+  vs.sort((a,b)=>a-b);const q=x=>vs[Math.min(vs.length-1,Math.max(0,Math.floor(x*vs.length)))]||0;
+  RP.range={lo:Math.floor((q(0.01)-4)/5)*5,hi:Math.ceil((q(0.999)+5)/5)*5,wlo:q(0.03),whi:Math.max(q(0.995),q(0.03)+15)}}
+function rpPaintWf(){
+  const ds=RP.ds,c=document.createElement("canvas");c.width=ds.C;c.height=ds.N;const x=c.getContext("2d"),img=x.createImageData(ds.C,ds.N),R=RP.range;
+  for(let r=0;r<ds.N;r++)for(let j=0;j<ds.C;j++){const v=rpVal(r,j),p=(r*ds.C+j)*4;
+    if(!isFinite(v)){img.data[p+3]=255;continue}
+    const col=LUT[Math.max(0,Math.min(255,Math.round((v-R.wlo)/(R.whi-R.wlo)*255)))];img.data[p]=col[0];img.data[p+1]=col[1];img.data[p+2]=col[2];img.data[p+3]=255}
+  x.putImageData(img,0,0);RP.off=c}
+const rpM=d=>({l:50*d,r:10*d,t:14*d,b:22*d});
+function rpGaps(j){const ds=RP.ds;return j>0&&(ds.colZ[j]!==ds.colZ[j-1]||ds.colF[j]-ds.colF[j-1]>ds.gapMHz)}
+function rpDraw(){
+  const ds=RP.ds;if(!ds)return;
+  const c=$("rp_spec"),d=sizeCanvas(c),ctx=c.getContext("2d"),W=c.width,H=c.height,m=rpM(d),R=RP.range,row=RP.row;
+  ctx.fillStyle="#05080c";ctx.fillRect(0,0,W,H);
+  const yOf=v=>m.t+(1-(Math.max(R.lo,Math.min(R.hi,v))-R.lo)/(R.hi-R.lo))*(H-m.t-m.b),xOf=j=>m.l+j/(ds.C-1||1)*(W-m.l-m.r);
+  ctx.font=`${10*d}px sans-serif`;ctx.lineWidth=d;ctx.strokeStyle=COL.grid;ctx.fillStyle=COL.mute;
+  const st=niceStep((R.hi-R.lo)/6);for(let v=Math.ceil(R.lo/st)*st;v<=R.hi;v+=st){const y=yOf(v);ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(W-m.r,y);ctx.stroke();ctx.fillText(Math.round(v),6*d,y+3*d)}
+  if(rpRel()){ctx.setLineDash([5*d,4*d]);ctx.strokeStyle="#5fd68a88";ctx.beginPath();ctx.moveTo(m.l,yOf(0));ctx.lineTo(W-m.r,yOf(0));ctx.stroke();ctx.setLineDash([])}
+  rpAxis(ctx,d,W,H,m,xOf);
+  ctx.beginPath();ctx.strokeStyle="#6fd0ff";ctx.lineWidth=1.3*d;let pen=false;
+  for(let j=0;j<ds.C;j++){const v=rpVal(row,j);if(!isFinite(v)){pen=false;continue}const x=xOf(j),y=yOf(v);if(!pen||rpGaps(j)){ctx.moveTo(x,y);pen=true}else ctx.lineTo(x,y)}
+  ctx.stroke();
+  const pk=rpPeaks(row);ctx.font=`bold ${10*d}px sans-serif`;
+  pk.forEach(q=>{const x=xOf(q.j),y=yOf(q.v);ctx.fillStyle="#ffd36e";ctx.beginPath();ctx.moveTo(x,y-3*d);ctx.lineTo(x-4*d,y-10*d);ctx.lineTo(x+4*d,y-10*d);ctx.closePath();ctx.fill();
+    const t=q.f.toFixed(2),tw=ctx.measureText(t).width;ctx.fillText(t,Math.min(W-tw-2*d,Math.max(m.l,x-tw/2)),Math.max(m.t+22*d,y-14*d))});
+  $("rp_peaks").innerHTML=pk.length?pk.map(q=>`<span style="margin-right:14px"><b>${q.f.toFixed(3)}</b> MHz　${rpRel()?"+"+q.v.toFixed(1)+" dB":q.v.toFixed(1)+" dBFS"}${RP.ds.zname.length>1?"（"+esc(q.z)+"）":""}</span>`).join(""):"這個時間點沒有明顯高於底噪的訊號";
+  ctx.font=`${11*d}px sans-serif`;ctx.fillStyle="#cfd8e6";ctx.fillText(`${rpFmtT(ds.t[row])} / ${rpFmtT(ds.t[ds.N-1])}　單位：${rpRel()?"dB（高於底噪）":"dBFS"}`,m.l+6*d,m.t+12*d);
+  if(RP.hv!=null){ctx.strokeStyle="#ffffff88";ctx.lineWidth=d;ctx.beginPath();ctx.moveTo(xOf(RP.hv),m.t);ctx.lineTo(xOf(RP.hv),H-m.b);ctx.stroke()}
+  // waterfall
+  const w=$("rp_wf"),d2=sizeCanvas(w),x2=w.getContext("2d"),m2=rpM(d2);
+  x2.fillStyle="#000";x2.fillRect(0,0,w.width,w.height);x2.imageSmoothingEnabled=false;
+  const top=4*d2,hh=w.height-top-4*d2;x2.drawImage(RP.off,m2.l,top,w.width-m2.l-m2.r,hh);
+  x2.font=`${10*d2}px sans-serif`;x2.fillStyle=COL.mute;x2.strokeStyle="#ffffff44";x2.lineWidth=d2;
+  const tot=ds.t[ds.N-1]||1,ts=niceStep(tot/8);
+  for(let s=0;s<=tot;s+=ts){const y=top+s/tot*hh;x2.beginPath();x2.moveTo(m2.l-5*d2,y);x2.lineTo(m2.l,y);x2.stroke();x2.fillText(rpFmtT(s),6*d2,y+3*d2)}
+  const yc=top+(tot?ds.t[row]/tot:0)*hh;x2.strokeStyle="#ffffff";x2.lineWidth=1.5*d2;x2.beginPath();x2.moveTo(m2.l,yc);x2.lineTo(w.width-m2.r,yc);x2.stroke();
+  $("rp_time").textContent=`${rpFmtT(ds.t[row])} / ${rpFmtT(tot)}`;$("rp_seek").value=row}
+function rpPeaks(row){
+  const ds=RP.ds,C=ds.C,v=new Float32Array(C);let fin=[];
+  for(let j=0;j<C;j++){v[j]=rpVal(row,j);if(isFinite(v[j]))fin.push(v[j])}
+  if(!fin.length)return[];fin.sort((a,b)=>a-b);const med=fin[fin.length>>1],thr=med+(rpRel()?8:10),e=2,cand=[];
+  for(let j=e;j<C-e;j++){const x=v[j];if(x>=thr&&x>=v[j-1]&&x>=v[j+1]&&x>=v[j-2]&&x>=v[j+2])cand.push(j)}
+  cand.sort((a,b)=>v[b]-v[a]);const pick=[],sep=Math.max(4,Math.round(C/40));
+  for(const j of cand){if(pick.length>=6)break;if(pick.every(k=>Math.abs(k-j)>sep||ds.colZ[k]!==ds.colZ[j]&&Math.abs(k-j)>2))pick.push(j)}
+  return pick.map(j=>({j,v:v[j],f:ds.colF[j],z:ds.zname[ds.colZ[j]]}))}
+function rpAxis(ctx,d,W,H,m,xOf){
+  const ds=RP.ds;ctx.fillStyle=COL.mute;ctx.strokeStyle="#8793a5";ctx.font=`${10*d}px sans-serif`;
+  const nt=Math.max(2,Math.floor((W-m.l-m.r)/(90*d)));
+  for(let k=0;k<=nt;k++){const j=Math.round(k/nt*(ds.C-1)),t=ds.colF[j].toFixed(ds.colF[ds.C-1]-ds.colF[0]<100?1:0),x=xOf(j),tw=ctx.measureText(t).width;ctx.fillText(t,Math.min(W-tw-2*d,Math.max(m.l,x-tw/2)),H-7*d)}
+  ctx.setLineDash([3*d,4*d]);for(let j=1;j<ds.C;j++)if(rpGaps(j)){const x=(xOf(j-1)+xOf(j))/2;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,H-m.b);ctx.stroke()}ctx.setLineDash([])}
+function rpSeekTime(t){const ds=RP.ds;let lo=0,hi=ds.N-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(ds.t[mid]<=t)lo=mid;else hi=mid-1}RP.row=lo;RP.pos=t}
+function rpPause(){RP.playing=false;$("rp_play").textContent="▶ 播放"}
+$("rp_play").onclick=()=>{if(!RP.ds)return;if(RP.playing){rpPause();return}
+  if(RP.row>=RP.ds.N-1)rpSeekTime(0);RP.playing=true;RP.last=performance.now();$("rp_play").textContent="❚❚ 暫停";requestAnimationFrame(rpLoop)};
+function rpLoop(now){if(!RP.playing)return;const ds=RP.ds,tot=ds.t[ds.N-1];
+  RP.pos+=(now-RP.last)/1000*(+$("rp_speed").value);RP.last=now;
+  if(RP.pos>=tot){rpSeekTime(tot);rpDraw();rpPause();return}
+  rpSeekTime(RP.pos);rpDraw();requestAnimationFrame(rpLoop)}
+$("rp_seek").oninput=e=>{if(!RP.ds)return;RP.row=+e.target.value;RP.pos=RP.ds.t[RP.row];rpDraw()};
+["rp_rel","rp_src"].forEach(id=>$(id).onchange=()=>{if(!RP.ds)return;rpRange();rpPaintWf();rpDraw()});
+function rpPickCol(e,cv){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1,m=rpM(d),f=((e.clientX-r.left)*d-m.l)/(cv.width-m.l-m.r);
+  return f<0||f>1?null:Math.round(f*(RP.ds.C-1))}
+function rpTip(e,j,row,extra){const ds=RP.ds,tip=$("tip"),v=rpVal(row,j);
+  tip.style.display="block";tip.style.whiteSpace="pre";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";
+  tip.textContent=`${ds.zname.length>1?ds.zname[ds.colZ[j]]+"\n":""}${ds.colF[j].toFixed(3)} MHz\n${rpFmtT(ds.t[row])}\n${isFinite(v)?(rpRel()?`+${v.toFixed(1)} dB（高於本區底噪）`:`${v.toFixed(1)} dBFS`):"（無資料）"}`}
+$("rp_spec").onmousemove=e=>{if(!RP.ds)return;const j=rpPickCol(e,$("rp_spec"));if(j==null){$("tip").style.display="none";return}RP.hv=j;rpTip(e,j,RP.row);if(!RP.playing)rpDraw()};
+$("rp_spec").onmouseleave=()=>{RP.hv=null;$("tip").style.display="none";$("tip").style.whiteSpace="";if(RP.ds&&!RP.playing)rpDraw()};
+function rpRowAt(e){const cv=$("rp_wf"),r=cv.getBoundingClientRect(),d=devicePixelRatio||1,top=4*d,hh=cv.height-top-4*d,ds=RP.ds,tot=ds.t[ds.N-1]||1;
+  const t=Math.max(0,Math.min(1,((e.clientY-r.top)*d-top)/hh))*tot;let lo=0,hi=ds.N-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(ds.t[mid]<=t)lo=mid;else hi=mid-1}return lo}
+let rpDrag=false;
+$("rp_wf").onmousedown=e=>{if(!RP.ds)return;rpDrag=true;const r=rpRowAt(e);RP.row=r;RP.pos=RP.ds.t[r];rpDraw()};
+window.addEventListener("mouseup",()=>{rpDrag=false});
+$("rp_wf").onmousemove=e=>{if(!RP.ds)return;const row=rpRowAt(e),j=rpPickCol(e,$("rp_wf"));
+  if(rpDrag){RP.row=row;RP.pos=RP.ds.t[row];rpDraw()}
+  if(j==null){$("tip").style.display="none";return}rpTip(e,j,row)};
+$("rp_wf").onmouseleave=()=>{$("tip").style.display="none";$("tip").style.whiteSpace=""};
+window.addEventListener("resize",()=>{if(RP.ds&&$("tab-replay")&&!$("tab-replay").classList.contains("hidden"))rpDraw()});
+</script>
+</body>
+</html>
