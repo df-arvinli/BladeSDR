@@ -7,20 +7,23 @@ Levels are relative (dBFS), not calibrated dBm.
 
 Two modes:
   default  one bladeRF-cli process per step (slow, ~15 min for 70-6000 MHz)
-  --fast   one bladeRF-cli process for the whole sweep; IQ is streamed through
-           FIFOs and reduced on the fly (no disk), with 50 % overlapping steps.
+  --fast   one libbladeRF session for the whole sweep (direct ctypes, no FIFOs, any OS);
+           IQ is reduced on the fly (no disk), with 50 % overlapping steps.
            Also records a peak-hold (max over time) column.
 """
 import argparse
 import csv
+import ctypes
 import os
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from bladerf_io import Radio  # noqa: E402
 
 FS = 56e6          # sample rate, Hz (xA4 usable bandwidth ~56 MHz)
 FFT_N = 2048
@@ -97,11 +100,10 @@ def slow_collect(args):
 FAST_STEP_HZ = 8e6        # 50 % overlap of the +/-12 MHz window: overlapped steps are averaged
 FAST_SKIP = 32768         # samples discarded after each retune
 FAST_BUF = 32768          # samples per USB buffer; n must be a multiple of this
-CHUNK_BYTES = 4 << 20
 
 
 def fast_collect(args):
-    """One bladeRF-cli process runs all steps; each step's IQ goes through its own FIFO."""
+    """Quick sweep: one libbladeRF session, retuned from step to step (no bladeRF-cli, no FIFOs)."""
     centers = np.minimum(np.arange(args.start * 1e6 + HALF_WIN_HZ, args.stop * 1e6 + HALF_WIN_HZ, FAST_STEP_HZ), 6000e6)
     n = int(np.ceil(FS * args.fast_dwell / FAST_BUF)) * FAST_BUF
     print(f"{len(centers)} steps, {FAST_STEP_HZ/1e6:.0f} MHz apart, {n/FS*1000:.0f} ms each, gain {args.gain} dB (fast)", flush=True)
@@ -109,118 +111,37 @@ def fast_collect(args):
     keep = (np.abs(axis) > DC_MASK_HZ) & (np.abs(axis) <= HALF_WIN_HZ)
     win = np.hanning(FFT_N).astype(np.float32)
     wnorm = float((win ** 2).sum())
-    seg_bytes = FFT_N * 4
-    result = {"mean": [None] * len(centers), "peak": [None] * len(centers), "done": 0, "err": None}
-    tmp = tempfile.mkdtemp(prefix="bladerf_fast_")
-    fifos = []
+    means, peaks = [], []
+    t0 = time.time()
+    radio = Radio(FS, args.gain, centers[0], n, bandwidth=FS, num_buffers=16, buf_samples=FAST_BUF, num_xfers=8,
+                  stream_timeout_ms=10000, rx_timeout_ms=10000)
     try:
-        lines = ["set biastee rx1 off", "set biastee rx2 off", f"set samplerate rx {int(FS)}",
-                 f"set bandwidth rx {int(FS)}", "set agc rx off", f"set gain rx {args.gain}"]
+        # samples still in flight from the previous frequency, plus the retune transient
+        drain = radio.flush_samples() + FAST_SKIP
+        radio.buf = np.zeros(max(n, drain) * 2, dtype=np.int16)
+        radio.ptr = radio.buf.ctypes.data_as(ctypes.c_void_p)
         for i, fc in enumerate(centers):
-            path = os.path.join(tmp, f"iq_{i:04d}.fifo")
-            os.mkfifo(path)
-            fifos.append(path)
-            lines += [f"set frequency rx {int(fc)}",
-                      f"rx config file={path} format=bin n={n} samples={FAST_BUF} buffers=16 xfers=8 timeout=10000",
-                      "rx start", "rx wait"]
-        lines.append("quit")
-        script = os.path.join(tmp, "sweep.script")
-        with open(script, "w") as fh:
-            fh.write("\n".join(lines) + "\n")
-        log = open(os.path.join(tmp, "cli.log"), "w")
-        proc = subprocess.Popen([args.cli, "-s", script], stdout=log, stderr=subprocess.STDOUT)
-        t0 = time.time()
-
-        def reader():
-            try:
-                for i, path in enumerate(fifos):
-                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-                    try:
-                        seen, skipped, carry = False, 0, b""
-                        acc = np.zeros(FFT_N, np.float64)
-                        pk = np.zeros(FFT_N, np.float64)
-                        nseg = 0
-                        t_wait = time.time()
-                        while True:
-                            try:
-                                chunk = os.read(fd, CHUNK_BYTES)
-                            except BlockingIOError:
-                                chunk = None
-                            if chunk is None:
-                                time.sleep(0.001)
-                            elif chunk == b"":
-                                if seen:
-                                    break  # writer closed: step complete
-                                if proc.poll() is not None or time.time() - t_wait > 30:
-                                    raise RuntimeError(f"no data at step {i}")
-                                time.sleep(0.002)
-                            else:
-                                seen = True
-                                if skipped < FAST_SKIP * 4:  # drop retune transient
-                                    cut = min(len(chunk), FAST_SKIP * 4 - skipped)
-                                    skipped += cut
-                                    chunk = chunk[cut:]
-                                data = carry + chunk
-                                m = len(data) // seg_bytes * seg_bytes
-                                carry = data[m:]
-                                if m:
-                                    raw = np.frombuffer(data[:m], dtype=np.int16).astype(np.float32) / 2048.0
-                                    iq = (raw[0::2] + 1j * raw[1::2]).reshape(-1, FFT_N)
-                                    sp = np.abs(np.fft.fft(iq * win, axis=1)) ** 2
-                                    acc += sp.sum(axis=0)
-                                    pk = np.maximum(pk, sp.max(axis=0))
-                                    nseg += sp.shape[0]
-                        if nseg == 0:
-                            raise RuntimeError(f"empty step {i}")
-                        result["mean"][i] = 10 * np.log10(np.fft.fftshift(acc / nseg) / wnorm + 1e-20)
-                        result["peak"][i] = 10 * np.log10(np.fft.fftshift(pk) / wnorm + 1e-20)
-                        result["done"] = i + 1
-                        print(f"[{i+1}/{len(centers)}] {centers[i]/1e6:8.1f} MHz  ({time.time()-t0:.0f}s)", flush=True)
-                    finally:
-                        os.close(fd)
-            except Exception as e:  # noqa: BLE001
-                result["err"] = str(e)
-
-        th = threading.Thread(target=reader, daemon=True)
-        th.start()
-        while th.is_alive():
-            th.join(0.5)
-            if proc.poll() is not None and proc.returncode != 0 and th.is_alive():
-                result["err"] = result["err"] or "bladeRF-cli exited early"
-                break
-            if time.time() - t0 > 900:
-                result["err"] = "fast sweep timed out"
-                break
-        if proc.poll() is None:
-            if result["err"]:
-                proc.kill()
-            else:
-                try:
-                    proc.wait(15)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-        log.close()
-        if result["err"] or result["done"] != len(centers):
-            tail = open(os.path.join(tmp, "cli.log")).read().strip().splitlines()[-4:]
-            raise RuntimeError(f"fast sweep failed at step {result['done']}/{len(centers)}: {result['err']} | " + " | ".join(tail))
-        print(f"capture done in {time.time()-t0:.0f}s", flush=True)
+            radio.retune(fc)
+            radio.rx(drain)
+            radio.rx(n)
+            acc = np.zeros(FFT_N, np.float64)
+            pk = np.zeros(FFT_N, np.float64)
+            nseg = 0
+            x = radio.buf[: n * 2].astype(np.float32) / 2048.0
+            iq = (x[0::2] + 1j * x[1::2])[: n // FFT_N * FFT_N].reshape(-1, FFT_N)
+            for off in range(0, iq.shape[0], 512):   # slices keep the FFT working set small
+                sp = np.abs(np.fft.fft(iq[off:off + 512] * win, axis=1)) ** 2
+                acc += sp.sum(axis=0)
+                pk = np.maximum(pk, sp.max(axis=0))
+                nseg += sp.shape[0]
+            means.append(10 * np.log10(np.fft.fftshift(acc / nseg) / wnorm + 1e-20))
+            peaks.append(10 * np.log10(np.fft.fftshift(pk) / wnorm + 1e-20))
+            print(f"[{i+1}/{len(centers)}] {fc/1e6:8.1f} MHz  ({time.time()-t0:.0f}s)", flush=True)
     finally:
-        for p in fifos:
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-        for fn in ("sweep.script", "cli.log"):
-            try:
-                os.remove(os.path.join(tmp, fn))
-            except OSError:
-                pass
-        try:
-            os.rmdir(tmp)
-        except OSError:
-            pass
+        radio.close()
+    print(f"capture done in {time.time()-t0:.0f}s", flush=True)
     freqs = [(fc + axis)[keep] for fc in centers]
-    return freqs, [m[keep] for m in result["mean"]], [m[keep] for m in result["peak"]]
+    return freqs, [m[keep] for m in means], [m[keep] for m in peaks]
 
 
 def main():

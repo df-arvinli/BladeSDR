@@ -49,11 +49,11 @@ BladeRF **同一時間只能被一個程式使用**（網頁伺服器、SDR++、
 - 設定：中心頻率、取樣率、增益、FFT 點數、平均次數、更新率、裁邊、直流尖峰修正。
 - 分析：基線比較（找出新出現的干擾）、最強訊號清單、空閒窗口建議、頻段監看與事件紀錄、全頻段位置條（可點擊跳頻）。
 - 圖上標示頻段定義（FM、ISM、GNSS、WiFi、各電信業者 LTE／n78 等）、WiFi 頻道。
-- 實作：`bladeRF-cli` 經 FIFO 串流 IQ，伺服器算 FFT，用 SSE 推送。
+- 實作：子程序 `webmon/live_rx.py` 用 ctypes 直接呼叫 libbladeRF，經 stdout 管道串流 IQ；伺服器算 FFT，用 SSE 推送（2026-11 之前是 `bladeRF-cli` 加 FIFO）。
 
 ### 3.2 掃描結果（sweep）
 - **完整**：每步啟動一次 `bladeRF-cli`，70–6000 MHz 約 15 分鐘，只有平均值。
-- **快速**：單一 `bladeRF-cli` 配合 FIFO 邊收邊算，全頻段約 **3 分半**（實測 209 秒），步進 8 MHz 重疊平均，每點約 0.15 秒，另外記錄**峰值保持**欄。
+- **快速**：單一 libbladeRF 連線逐步換頻、邊收邊算（2026-11 起不再用 `bladeRF-cli` 與 FIFO），全頻段約 **3 分半**（舊版實測 209 秒；新版只實測過 400–600 MHz 約 8 秒，全頻段耗時沒重測），步進 8 MHz 重疊平均，每點約 0.15 秒，另外記錄**峰值保持**欄。
 - 檢視：縮放平移、頻段標示、兩檔比較（顯示差值）、刪除（移到 `sweep/.trash/`，可手動救回）。
 
 ### 3.3 分區動態監控（hop）
@@ -90,10 +90,10 @@ BladeRF **同一時間只能被一個程式使用**（網頁伺服器、SDR++、
    ▼
 webmon/server.py   ThreadingHTTPServer + Monitor 狀態機（鎖 ctl 串行化啟停）
    │
-   ├─ live ──► bladeRF-cli ──FIFO──► server 內 numpy 算 FFT
+   ├─ live ──► webmon/live_rx.py（子程序，ctypes）──stdout 管道──► server 內 numpy 算 FFT
    ├─ sweep ─► sweep/bladerf_sweep.py（子程序）──► sweep/*.csv / .png
    │             ├─ 完整：每步一個 bladeRF-cli
-   │             └─ --fast：單一 bladeRF-cli 腳本 + 每步一個 FIFO，邊收邊算
+   │             └─ --fast：單一 libbladeRF 連線（common/bladerf_io.py）逐步換頻，邊收邊算
    ├─ hop ───► webmon/hopper.py（子程序，ctypes 直接呼叫 libbladeRF）──stdout JSON 行──► server
    └─ calib ─► hopper.py --calibrate ──► webmon/calib/shape_<N>M.json
 ```
@@ -104,6 +104,8 @@ webmon/server.py   ThreadingHTTPServer + Monitor 狀態機（鎖 ctl 串行化�
 |---|---|
 | `webmon/server.py` | 網頁伺服器、模式狀態機、API、事件偵測、子程序管理 |
 | `webmon/hopper.py` | 跳頻接收與校正（ctypes → libbladeRF） |
+| `webmon/live_rx.py` | 即時監控的接收子程序，原始 IQ 輸出到 stdout |
+| `common/bladerf_io.py` | 共用的 libbladeRF ctypes 封裝（各平台找函式庫、`BLADERF_LIB` 可覆寫）與「stdin 關閉即停止」機制 |
 | `webmon/static/index.html` | 全部前端 |
 | `webmon/config.json` | 上次的 live 與 hop 設定（會自動寫入） |
 | `webmon/events.csv` | 干擾事件紀錄 |
@@ -224,3 +226,11 @@ webmon/server.py   ThreadingHTTPServer + Monitor 狀態機（鎖 ctl 串行化�
 - 協作規則見 [CONTRIBUTING.md](CONTRIBUTING.md)：`main` 只透過 PR 合併、分支 `類型/說明`、Conventional Commits。
 - **重建 SDR++**：`sdrpp-src/` 不在 git 裡（上游 https://github.com/AlexandreRouma/SDRPlusPlus.git，目前編譯的 commit 為 `f10fb98af8b80de01de94e60c17608e4281e2515`，含 bladeRF 模組）。需要時自行 clone 到 `sdrpp-src/` 並依上游說明編譯；專案路徑含空格會讓 CMake 複製步驟出錯（見上方已知問題）。
 - 不在 git 裡的本機資料：`sweep/*.csv|png`（量測）、`webmon/recordings/`、`webmon/events.csv`、`webmon/config.json`、`webmon/server.log`。
+
+## 跨平台重構（分支 `refactor/cross-platform-core`，2026-11）
+
+- 目的：讓共用層不依賴 POSIX 專有功能（FIFO、`select` 管道、`SIGINT`/`SIGKILL`），以便之後在 Windows 上驗證。
+- 做法：即時監控與快速掃描改用 `common/bladerf_io.py`（ctypes 直接呼叫 libbladeRF）；子程序改以「關閉 stdin」要求乾淨結束，再 `terminate`、`kill`；子程序用 `sys.executable`，不再寫死 `.venv/bin/python`；函式庫依平台尋找（macOS dylib、Linux `.so`、Windows `bladeRF.dll`）。
+- **Mac 上實測**：即時 4 次、分區 4 次的啟動→停止循環、即時→分區→即時的切換，全部正常；停止耗時約 0.02–0.09 秒，結束後沒有殘留子程序；快速掃描 400–600 MHz 的底噪曲線形狀與舊版一致（突發訊號因時間不同而不同）。
+- **尚未驗證**：Windows（驅動、DLL 路徑、USB 直通）、Linux；完整掃描（非 `--fast`）仍用 `bladeRF-cli` 逐步擷取到檔案，沒改；全頻段快速掃描的耗時；長時間穩定性（之前的掉線與停止後重啟卡住是否改善，只測了短循環）。
+- 已知遺留：伺服器本身被結束時，仍可能留下子程序（舊版是 `bladeRF-cli`，現在是 `live_rx.py`/`hopper.py`）；尚未處理。

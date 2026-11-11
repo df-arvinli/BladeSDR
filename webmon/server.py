@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Local web monitor for a bladeRF 2.0 (xA4): live spectrum, settings, sweeps, events.
 
-Receive only. Binds to localhost. Uses bladeRF-cli (IQ via a FIFO) so no extra
-SDR libraries are required. Levels are relative dBFS, not calibrated dBm.
+Receive only. Binds to localhost. The live receiver and the zone hopper are child processes that talk
+to libbladeRF directly (common/bladerf_io.py) and stream to us over pipes, so nothing here depends on
+POSIX-only features. bladeRF-cli is only used to read device info and for the slow full sweep.
+Levels are relative dBFS, not calibrated dBm.
 """
 import argparse
 import collections
@@ -10,10 +12,10 @@ import csv
 import gzip
 import json
 import os
+import queue
 import re
-import select
-import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -27,7 +29,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 SWEEP_DIR = os.path.abspath(os.path.join(ROOT, "..", "sweep"))
 SWEEP_PY = os.path.join(SWEEP_DIR, "bladerf_sweep.py")
-SWEEP_PYTHON = os.path.join(SWEEP_DIR, ".venv", "bin", "python")
+SWEEP_PYTHON = sys.executable   # the server runs in the project venv, so children use the same interpreter on every OS
+LIVE_PY = os.path.join(ROOT, "live_rx.py")
 HOPPER_PY = os.path.join(ROOT, "hopper.py")
 CALIB_DIR = os.path.join(ROOT, "calib")
 EVENTS_CSV = os.path.join(ROOT, "events.csv")
@@ -91,8 +94,8 @@ class Recorder:
 class Monitor:
     def __init__(self):
         self.lock = threading.RLock()
-        self.ctl = threading.RLock()   # serialises start/stop/restart of the bladeRF-cli stream
-        self.children = []             # every bladeRF-cli we spawned, so none can be orphaned
+        self.ctl = threading.RLock()   # serialises start/stop/restart of the receiver child
+        self.children = []             # every receiver child we spawned, so none can be orphaned
         self.cond = threading.Condition()
         self.cfg = {
             "freq": 2437e6, "rate": 20e6, "gain": 20, "nfft": 2048, "avg": 8,
@@ -271,12 +274,19 @@ class Monitor:
 
     @staticmethod
     def _terminate(p):
-        """Stop one bladeRF-cli: SIGINT, then SIGTERM, then SIGKILL."""
+        """Stop one child. Closing its stdin asks it to exit cleanly (works on every OS); then terminate,
+        then kill. A hard kill mid-stream can wedge the USB link, so the clean exit gets the longest wait."""
         if p is None or p.poll() is not None:
             return
-        for sig, wait in ((signal.SIGINT, 6), (signal.SIGTERM, 3), (signal.SIGKILL, 3)):  # SIGKILL mid-stream can wedge the USB link, so give a clean exit time
+        try:
+            if p.stdin:
+                p.stdin.close()
+        except OSError:
+            pass
+        for action, wait in ((None, 6), (p.terminate, 3), (p.kill, 3)):
             try:
-                p.send_signal(sig)
+                if action:
+                    action()
                 p.wait(wait)
                 return
             except subprocess.TimeoutExpired:
@@ -295,7 +305,7 @@ class Monitor:
             with self.lock:
                 if self.mode != "idle":
                     return False, f"busy ({self.mode})"
-            self._reap_children()  # never start while an old bladeRF-cli could still hold the device
+            self._reap_children()  # never start while an old child could still hold the device
             with self.lock:
                 self.mode = "live"
                 self.error = ""
@@ -310,7 +320,7 @@ class Monitor:
                 self.stop_evt.set()
                 t = self.thread
             if t:
-                t.join(20)  # the loop's own cleanup stops its bladeRF-cli
+                t.join(20)  # the loop's own cleanup stops its receiver
             self._reap_children()
             with self.lock:
                 self.thread = None
@@ -320,29 +330,30 @@ class Monitor:
 
     def _live_loop(self):
         cfg = dict(self.cfg)
-        tmp = tempfile.mkdtemp(prefix="bladerf_mon_")
-        fifo = os.path.join(tmp, "iq.fifo")
-        logp = os.path.join(tmp, "cli.log")
-        os.mkfifo(fifo)
+        logf = tempfile.TemporaryFile()   # the receiver's stderr (one error line)
         rate, nfft, navg = int(cfg["rate"]), cfg["nfft"], cfg["avg"]
-        bw = int(min(56e6, max(200e3, rate * 1.4)))
-        cmds = [
-            "set biastee rx1 off", "set biastee rx2 off",
-            f"set samplerate rx {rate}", f"set bandwidth rx {bw}",
-            f"set frequency rx {int(cfg['freq'])}", "set agc rx off",
-            f"set gain rx {cfg['gain']}",
-            f"rx config file={fifo} format=bin n=0 samples=32768 buffers=32 xfers=16 timeout=5000",
-            "rx start", "rx wait",
-        ]
-        logf = open(logp, "w")
-        fd = -1
         proc = None
         try:
-            proc = subprocess.Popen([CLI, "-e", "; ".join(cmds)], stdout=logf, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen([SWEEP_PYTHON, LIVE_PY, "--stdin-stop", "--cfg",
+                                     json.dumps({"rate": rate, "freq": int(cfg["freq"]), "gain": cfg["gain"]})],
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=logf, bufsize=0)
             with self.lock:
                 self.proc = proc
                 self.children.append(proc)
-            fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+            chunks = queue.Queue()
+
+            def pump():   # blocking reads in a thread: select() cannot watch pipes on Windows
+                try:
+                    while True:
+                        c = os.read(proc.stdout.fileno(), 1 << 20)
+                        if not c:
+                            break
+                        chunks.put(c)
+                except OSError:
+                    pass
+                chunks.put(None)
+
+            threading.Thread(target=pump, daemon=True).start()
             need = nfft * 4 * navg
             win = np.hanning(nfft).astype(np.float32)
             wnorm = float((win ** 2).sum())
@@ -357,24 +368,21 @@ class Monitor:
             got_data = False
             started = time.time()
             while not self.stop_evt.is_set():
-                if proc.poll() is not None:
-                    logf.flush()
-                    msg = open(logp).read().strip().splitlines()
-                    self.error = ("bladeRF-cli exited: " + " | ".join(msg[-3:]))[:400]
+                try:
+                    chunk = chunks.get(timeout=0.2)
+                except queue.Empty:
+                    chunk = b""
+                if chunk is None:   # the receiver closed its output: it exited
+                    proc.wait(5)
+                    logf.seek(0)
+                    msg = logf.read().decode(errors="replace").strip().splitlines()
+                    self.error = ("live receiver exited: " + " | ".join(msg[-3:]))[:400]
                     break
-                r, _, _ = select.select([fd], [], [], 0.2)
-                if r:
-                    try:
-                        chunk = os.read(fd, 1 << 20)
-                    except BlockingIOError:
-                        chunk = b""
-                    if chunk:
-                        got_data = True
-                        buf += chunk
-                        if len(buf) > 2 * need:
-                            del buf[: (len(buf) - need) // 4 * 4]
-                    else:
-                        time.sleep(0.02)
+                if chunk:
+                    got_data = True
+                    buf += chunk
+                    if len(buf) > 2 * need:
+                        del buf[: (len(buf) - need) // 4 * 4]
                 if not got_data and time.time() - started > 15:
                     self.error = "no samples received from bladeRF"
                     break
@@ -448,16 +456,8 @@ class Monitor:
             self.error = f"live error: {e}"
         finally:
             self.rec_stop("live")
-            if fd >= 0:
-                os.close(fd)
-            logf.close()
             self._terminate(proc)  # this thread's own process, never someone else's
-            try:
-                os.remove(fifo)
-                os.remove(logp)
-                os.rmdir(tmp)
-            except OSError:
-                pass
+            logf.close()
             with self.lock:
                 if self.mode == "live" and not self.stop_evt.is_set():
                     self.mode = "idle"  # ended on its own (error)
@@ -525,7 +525,8 @@ class Monitor:
                 argcfg["calib_path"] = calib_file(cfg["rate"])
             arg = json.dumps(argcfg)
             self.hop_err = tempfile.TemporaryFile()
-            self.hop_proc = subprocess.Popen([SWEEP_PYTHON, HOPPER_PY, "--cfg", arg], stdout=subprocess.PIPE,
+            self.hop_proc = subprocess.Popen([SWEEP_PYTHON, HOPPER_PY, "--stdin-stop", "--cfg", arg], stdin=subprocess.PIPE,
+                                             stdout=subprocess.PIPE,
                                              stderr=self.hop_err, text=True, bufsize=1)
             self.children.append(self.hop_proc)
             self.hop_thread = threading.Thread(target=self._hop_reader, args=(self.hop_proc, cfg), daemon=True)
