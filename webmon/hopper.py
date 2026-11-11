@@ -15,9 +15,8 @@ Receive only: no TX call is ever made, and the bias tee is forced off.
 Levels are relative dBFS, not calibrated dBm.
 """
 import argparse
-import ctypes as C
-import ctypes.util
 import json
+import os
 import queue
 import signal
 import sys
@@ -27,87 +26,22 @@ from datetime import datetime
 
 import numpy as np
 
-RX0 = 0                  # BLADERF_CHANNEL_RX(0)
-TUNING_FPGA = 1          # BLADERF_TUNING_MODE_FPGA
-GAIN_MGC = 1             # BLADERF_GAIN_MGC
-FMT_SC16_Q11 = 0
-LAYOUT_RX_X1 = 0
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+from bladerf_io import Radio as _Radio, watch_stdin  # noqa: E402
+
 NUM_BUFFERS, BUF_SAMPLES, NUM_XFERS = 8, 8192, 4
 FFT_N = 2048
 
 
-def load_lib():
-    for name in ("/opt/homebrew/lib/libbladeRF.2.dylib", "/usr/local/lib/libbladeRF.2.dylib",
-                 ctypes.util.find_library("bladeRF")):
-        if name:
-            try:
-                return C.CDLL(name)
-            except OSError:
-                continue
-    raise RuntimeError("libbladeRF not found")
+class Radio(_Radio):
+    def __init__(self, rate, gain, first_freq, max_samples):
+        super().__init__(rate, gain, first_freq, max_samples, fpga_tuning=True, num_buffers=NUM_BUFFERS,
+                         buf_samples=BUF_SAMPLES, num_xfers=NUM_XFERS)
 
 
 def emit(obj):
     sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
     sys.stdout.flush()
-
-
-class Radio:
-    """Thin ctypes wrapper: open, configure RX, retune while streaming, read."""
-
-    def __init__(self, rate, gain, first_freq, max_samples):
-        self.lib = lib = load_lib()
-        vp = C.c_void_p
-        lib.bladerf_open.argtypes = [C.POINTER(vp), C.c_char_p]
-        lib.bladerf_set_tuning_mode.argtypes = [vp, C.c_int]
-        lib.bladerf_set_sample_rate.argtypes = [vp, C.c_int, C.c_uint32, C.POINTER(C.c_uint32)]
-        lib.bladerf_set_bandwidth.argtypes = [vp, C.c_int, C.c_uint32, C.POINTER(C.c_uint32)]
-        lib.bladerf_set_gain_mode.argtypes = [vp, C.c_int, C.c_int]
-        lib.bladerf_set_gain.argtypes = [vp, C.c_int, C.c_int]
-        lib.bladerf_set_bias_tee.argtypes = [vp, C.c_int, C.c_bool]
-        lib.bladerf_set_frequency.argtypes = [vp, C.c_int, C.c_uint64]
-        lib.bladerf_sync_config.argtypes = [vp, C.c_int, C.c_int, C.c_uint, C.c_uint, C.c_uint, C.c_uint]
-        lib.bladerf_enable_module.argtypes = [vp, C.c_int, C.c_bool]
-        lib.bladerf_sync_rx.argtypes = [vp, C.c_void_p, C.c_uint, C.c_void_p, C.c_uint]
-        lib.bladerf_close.argtypes = [vp]
-        lib.bladerf_strerror.restype = C.c_char_p
-        self.dev = vp()
-        self.enabled = False
-        self.chk(lib.bladerf_open(C.byref(self.dev), None), "open")
-        act = C.c_uint32()
-        # Order matters: switching tuning mode resets the gain, so set the mode first.
-        self.chk(lib.bladerf_set_tuning_mode(self.dev, TUNING_FPGA), "tuning mode")
-        self.chk(lib.bladerf_set_sample_rate(self.dev, RX0, int(rate), C.byref(act)), "sample rate")
-        self.rate = int(act.value)
-        self.chk(lib.bladerf_set_bandwidth(self.dev, RX0, min(56_000_000, int(self.rate * 1.4)), C.byref(act)), "bandwidth")
-        self.bandwidth = int(act.value)
-        self.chk(lib.bladerf_set_gain_mode(self.dev, RX0, GAIN_MGC), "gain mode")
-        self.chk(lib.bladerf_set_gain(self.dev, RX0, int(gain)), "gain")
-        self.chk(lib.bladerf_set_bias_tee(self.dev, RX0, False), "bias tee off")
-        self.chk(lib.bladerf_set_frequency(self.dev, RX0, int(first_freq)), "frequency")
-        self.chk(lib.bladerf_sync_config(self.dev, LAYOUT_RX_X1, FMT_SC16_Q11, NUM_BUFFERS, BUF_SAMPLES, NUM_XFERS, 3000), "sync config")
-        self.chk(lib.bladerf_enable_module(self.dev, RX0, True), "enable rx")
-        self.enabled = True
-        self.buf = np.zeros(max_samples * 2, dtype=np.int16)
-        self.ptr = self.buf.ctypes.data_as(C.c_void_p)
-
-    def chk(self, r, what):
-        if r != 0:
-            raise RuntimeError(f"{what} failed: {self.lib.bladerf_strerror(r).decode()} ({r})")
-
-    def retune(self, freq):
-        self.chk(self.lib.bladerf_set_frequency(self.dev, RX0, int(freq)), "retune")
-
-    def rx(self, n):
-        self.chk(self.lib.bladerf_sync_rx(self.dev, self.ptr, n, None, 1500), "rx")  # short timeout: a stalled stream must not outlast a stop request
-
-    def close(self):
-        try:
-            if self.enabled:
-                self.lib.bladerf_enable_module(self.dev, RX0, False)
-            self.lib.bladerf_close(self.dev)
-        except Exception:  # noqa: BLE001
-            pass
 
 
 def calibrate(cfg):
@@ -168,6 +102,9 @@ def calibrate(cfg):
         radio.close()
 
 
+STDIN_STOP = [False]
+
+
 def hop(cfg):
     zones = cfg["zones"]
     rate = int(cfg.get("rate", 40e6))
@@ -180,6 +117,8 @@ def hop(cfg):
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
+    if STDIN_STOP[0]:
+        watch_stdin(stop)
 
     keep = max(FFT_N, int(np.ceil(rate * dwell_ms / 1000.0 / FFT_N)) * FFT_N)
     discard = NUM_BUFFERS * BUF_SAMPLES + int(rate * 0.0015)  # drain samples buffered during the retune
@@ -287,7 +226,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cfg", required=True, help="JSON configuration")
     ap.add_argument("--calibrate", action="store_true", help="measure and store the edge-noise profile")
+    ap.add_argument("--stdin-stop", action="store_true", help="stop when stdin is closed (used by the server)")
     args = ap.parse_args()
+    STDIN_STOP[0] = args.stdin_stop
     cfg = json.loads(args.cfg)
     try:
         (calibrate if args.calibrate else hop)(cfg)

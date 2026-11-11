@@ -5,6 +5,7 @@
 cd sweep && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # 掃描與網頁伺服器共用
 cd ../webmon && ../sweep/.venv/bin/python server.py --port 8080                   # http://127.0.0.1:8080
 ```
+需要先安裝 libbladeRF（macOS：`brew install libbladerf`；Windows：Nuand 安裝程式；找不到時設定環境變數 `BLADERF_LIB` 為函式庫完整路徑）。
 BladeRF 同一時間只能被一個程式使用；沒接裝置時網頁仍可開（回放、掃描結果、事件）。
 
 ## 分支
